@@ -338,3 +338,118 @@ export const googleAuth = async (req: AuthRequest, res: Response) => {
     throw createError(error.message || 'Google authentication failed', 500);
   }
 };
+
+// Save user preferences (location, cultural interests)
+export const savePreferences = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+  const { city, categories, interests } = req.body;
+
+  if (!userId) {
+    throw createError('User not authenticated', 401);
+  }
+
+  try {
+    // Update user's city
+    if (city) {
+      const { error: cityError } = await supabase
+        .from('User')
+        .update({ 
+          city,
+          updatedAt: new Date().toISOString() 
+        })
+        .eq('id', userId);
+
+      if (cityError) {
+        console.error('Update city error:', cityError);
+      }
+    }
+
+    // Check if user already has preferences
+    const { data: existingPrefs } = await supabase
+      .from('UserPreference')
+      .select('id')
+      .eq('userId', userId)
+      .single();
+
+    if (existingPrefs) {
+      // Update existing preferences
+      const { error: updateError } = await supabase
+        .from('UserPreference')
+        .update({
+          categories: categories || [],
+          culturalInterests: interests || [],
+          updatedAt: new Date().toISOString(),
+        })
+        .eq('userId', userId);
+
+      if (updateError) {
+        console.error('Update preferences error:', updateError);
+        throw updateError;
+      }
+    } else {
+      // Create new preferences
+      const { error: insertError } = await supabase
+        .from('UserPreference')
+        .insert({
+          userId,
+          categories: categories || [],
+          culturalInterests: interests || [],
+        });
+
+      if (insertError) {
+        console.error('Insert preferences error:', insertError);
+        throw insertError;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Preferences saved successfully',
+      data: {
+        city,
+        categories,
+        interests,
+      },
+    });
+  } catch (error: any) {
+    console.error('Save preferences error:', error);
+    throw createError('Failed to save preferences', 500);
+  }
+};
+
+// Get user preferences
+export const getPreferences = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    throw createError('User not authenticated', 401);
+  }
+
+  try {
+    // Get user's city
+    const { data: user } = await supabase
+      .from('User')
+      .select('city')
+      .eq('id', userId)
+      .single();
+
+    // Get user preferences
+    const { data: preferences } = await supabase
+      .from('UserPreference')
+      .select('categories, culturalInterests')
+      .eq('userId', userId)
+      .single();
+
+    res.json({
+      success: true,
+      data: {
+        city: user?.city || null,
+        categories: preferences?.categories || [],
+        interests: preferences?.culturalInterests || [],
+      },
+    });
+  } catch (error: any) {
+    console.error('Get preferences error:', error);
+    throw createError('Failed to get preferences', 500);
+  }
+};
