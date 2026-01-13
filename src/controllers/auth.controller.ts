@@ -4,6 +4,13 @@ import jwt from 'jsonwebtoken';
 import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
+import { createClient } from '@supabase/supabase-js';
+
+// Supabase Auth client (with service role for admin operations)
+const supabaseAuth = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!
+);
 
 // Generate JWT token
 const generateToken = (user: { id: string; email: string; role: string; fullName: string }): string => {
@@ -253,4 +260,81 @@ export const getReminders = async (req: AuthRequest, res: Response) => {
     success: true,
     data: reminders || [],
   });
+};
+
+// Google OAuth authentication
+export const googleAuth = async (req: AuthRequest, res: Response) => {
+  const { accessToken, refreshToken } = req.body;
+
+  try {
+    // Get user from Supabase using the access token
+    const { data: { user: supabaseUser }, error: authError } = await supabaseAuth.auth.getUser(accessToken);
+
+    if (authError || !supabaseUser) {
+      console.error('Supabase auth error:', authError);
+      throw createError('Invalid access token', 401);
+    }
+
+    const email = supabaseUser.email;
+    const fullName = supabaseUser.user_metadata?.full_name || 
+                     supabaseUser.user_metadata?.name || 
+                     email?.split('@')[0] || 'User';
+
+    // Check if user already exists in our database
+    const { data: existingUser } = await supabase
+      .from('User')
+      .select('id, email, fullName, firstName, lastName, phone, city, role')
+      .eq('email', email)
+      .single();
+
+    let user;
+
+    if (existingUser) {
+      // User already exists, just return their data
+      user = existingUser;
+    } else {
+      // Create new user
+      const { data: newUser, error: insertError } = await supabase
+        .from('User')
+        .insert({
+          email,
+          fullName,
+          password: '', // No password for OAuth users
+          role: 'USER',
+        })
+        .select('id, email, fullName, firstName, lastName, phone, city, role')
+        .single();
+
+      if (insertError) {
+        console.error('Create user error:', insertError);
+        throw createError('Failed to create user', 500);
+      }
+
+      user = newUser;
+    }
+
+    // Generate our own JWT token
+    const token = generateToken(user);
+
+    res.json({
+      success: true,
+      message: 'Google authentication successful',
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone,
+          city: user.city,
+          role: user.role,
+        },
+        token,
+      },
+    });
+  } catch (error: any) {
+    console.error('Google auth error:', error);
+    throw createError(error.message || 'Google authentication failed', 500);
+  }
 };

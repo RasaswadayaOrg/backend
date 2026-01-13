@@ -64,4 +64,14 @@ router.put(
   authController.changePassword
 );
 
+// Google OAuth
+router.post(
+  '/google',
+  [
+    body('accessToken').notEmpty().withMessage('Access token is required'),
+  ],
+  validateRequest,
+  authController.googleAuth
+);
+
 export default router;
