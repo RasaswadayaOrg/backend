@@ -66,6 +66,24 @@ model User {
   enquiries       Enquiry[]
   store           Store?
   reminders       Reminder[]
+  preferences     UserPreference?
+}
+
+// User cultural preferences (selected during signup)
+model UserPreference {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Cultural category preferences
+  categories String[] // Array of category IDs: traditional-music, classical-dance, etc.
+  
+  // Specific interest selections
+  culturalInterests String[] // Array of specific interests: kandyan-dance, esala-perahera, etc.
+
+  // User relation
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ============ EVENTS ============

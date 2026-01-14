@@ -64,4 +64,34 @@ router.put(
   authController.changePassword
 );
 
+// Google OAuth
+router.post(
+  '/google',
+  [
+    body('accessToken').notEmpty().withMessage('Access token is required'),
+  ],
+  validateRequest,
+  authController.googleAuth
+);
+
+// Save user preferences (location, interests, categories)
+router.post(
+  '/preferences',
+  authenticate,
+  [
+    body('city').optional().isString(),
+    body('categories').optional().isArray(),
+    body('interests').optional().isArray(),
+  ],
+  validateRequest,
+  authController.savePreferences
+);
+
+// Get user preferences
+router.get(
+  '/preferences',
+  authenticate,
+  authController.getPreferences
+);
+
 export default router;
