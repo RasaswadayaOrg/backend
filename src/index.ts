@@ -18,6 +18,7 @@ import storeRoutes from './routes/store.routes';
 import cartRoutes from './routes/cart.routes';
 import orderRoutes from './routes/order.routes';
 import userRoutes from './routes/user.routes';
+import roleApplicationRoutes from './routes/roleApplication.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -48,6 +49,8 @@ app.use('/api/academies', academyRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/cart', cartRoutes);
+app.use('/api/role-applications', roleApplicationRoutes);
+
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);
 

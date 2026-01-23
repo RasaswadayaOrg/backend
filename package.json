@@ -26,8 +26,11 @@
   },
   "homepage": "https://github.com/RasaswadayaOrg/backend#readme",
   "dependencies": {
+    "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.2.0",
     "@supabase/supabase-js": "^2.90.1",
+    "@types/multer": "^2.0.0",
+    "@types/pg": "^8.16.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -37,6 +40,8 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "pg": "^8.17.2",
     "prisma": "^7.2.0"
   },
   "devDependencies": {

@@ -40,6 +40,12 @@ enum EnquiryStatus {
   CLOSED
 }
 
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // ============ USERS ============
 
 model User {
@@ -67,6 +73,7 @@ model User {
   store           Store?
   reminders       Reminder[]
   preferences     UserPreference?
+  roleApplications RoleApplication[]
 }
 
 // User cultural preferences (selected during signup)
@@ -330,5 +337,20 @@ model Reminder {
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
+}
+
+// Role Application Requests
+model RoleApplication {
+  id               String            @id @default(cuid())
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role             UserRole          // The role being applied for (ARTIST, ORGANIZER)
+  status           ApplicationStatus @default(PENDING)
+  bio              String?           // For Artists
+  portfolioUrl     String?           // For Artists
+  proofDocumentUrl String?           // URL to uploaded proof (PDF/Image)
+  notes            String?           // Admin notes or extra user info
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
 
