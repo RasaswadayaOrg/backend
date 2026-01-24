@@ -18,6 +18,7 @@ import storeRoutes from './routes/store.routes';
 import cartRoutes from './routes/cart.routes';
 import orderRoutes from './routes/order.routes';
 import userRoutes from './routes/user.routes';
+import adminRoutes from './routes/admin.routes';
 import roleApplicationRoutes from './routes/roleApplication.routes';
 
 // Import middleware
@@ -53,6 +54,7 @@ app.use('/api/role-applications', roleApplicationRoutes);
 
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -57,6 +57,7 @@ model User {
   lastName  String?
   phone     String?
   city      String?
+  avatarUrl String?
   role      UserRole @default(USER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -73,30 +74,22 @@ model User {
   store           Store?
   reminders       Reminder[]
   preferences     UserPreference?
-  roleApplications RoleApplication[]
 }
 
-// User cultural preferences (selected during signup)
 model UserPreference {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Cultural category preferences
-  categories String[] // Array of category IDs: traditional-music, classical-dance, etc.
-  
-  // Specific interest selections
-  culturalInterests String[] // Array of specific interests: kandyan-dance, esala-perahera, etc.
-
-  // User relation
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories String[]
+  interests  String[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // ============ EVENTS ============
 
 model Event {
-  id          String    @id @default(cuid())
+  id          String    @id @default(cuid()))
   title       String
   description String
   eventDate   DateTime
