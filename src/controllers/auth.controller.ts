@@ -254,3 +254,187 @@ export const getReminders = async (req: AuthRequest, res: Response) => {
     data: reminders || [],
   });
 };
+
+// Google OAuth - sync with Supabase auth
+export const googleAuth = async (req: AuthRequest, res: Response) => {
+  const { accessToken, refreshToken } = req.body;
+
+  if (!accessToken) {
+    throw createError('Access token is required', 400);
+  }
+
+  try {
+    // Verify the token with Supabase and get user info
+    const { data: supabaseUser, error: supabaseError } = await supabase.auth.getUser(accessToken);
+
+    if (supabaseError || !supabaseUser?.user) {
+      console.error('Supabase auth error:', supabaseError);
+      throw createError('Invalid access token', 401);
+    }
+
+    const { user: authUser } = supabaseUser;
+    const email = authUser.email;
+    const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || email?.split('@')[0] || 'User';
+    const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
+
+    if (!email) {
+      throw createError('Email not found in Google account', 400);
+    }
+
+    // Check if user already exists in our database
+    const { data: existingUser } = await supabase
+      .from('User')
+      .select('id, email, fullName, firstName, lastName, phone, city, role, avatarUrl')
+      .eq('email', email)
+      .single();
+
+    let user;
+
+    if (existingUser) {
+      // Update existing user with latest info from Google
+      const { data: updatedUser, error: updateError } = await supabase
+        .from('User')
+        .update({
+          fullName: existingUser.fullName || fullName,
+          avatarUrl: avatarUrl || existingUser.avatarUrl,
+          updatedAt: new Date().toISOString(),
+        })
+        .eq('id', existingUser.id)
+        .select('id, email, fullName, firstName, lastName, phone, city, role, avatarUrl')
+        .single();
+
+      if (updateError) {
+        console.error('Update user error:', updateError);
+        throw createError('Failed to update user', 500);
+      }
+      user = updatedUser;
+    } else {
+      // Create new user
+      const { data: newUser, error: insertError } = await supabase
+        .from('User')
+        .insert({
+          email,
+          fullName,
+          avatarUrl,
+          password: '', // No password for OAuth users
+          role: 'USER',
+        })
+        .select('id, email, fullName, firstName, lastName, phone, city, role, avatarUrl')
+        .single();
+
+      if (insertError) {
+        console.error('Create user error:', insertError);
+        throw createError('Failed to create user', 500);
+      }
+      user = newUser;
+    }
+
+    // Generate our own JWT token
+    const token = generateToken(user);
+
+    res.json({
+      success: true,
+      message: 'Google authentication successful',
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone,
+          city: user.city,
+          role: user.role,
+          avatarUrl: user.avatarUrl,
+        },
+        token,
+      },
+    });
+  } catch (error: any) {
+    console.error('Google auth error:', error);
+    if (error.statusCode) {
+      throw error;
+    }
+    throw createError('Google authentication failed', 500);
+  }
+};
+
+// Save user preferences (categories and interests)
+export const savePreferences = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+  const { city, categories, interests } = req.body;
+
+  if (!userId) {
+    throw createError('User not authenticated', 401);
+  }
+
+  try {
+    // Update user's city if provided
+    if (city) {
+      const { error: userUpdateError } = await supabase
+        .from('User')
+        .update({ city, updatedAt: new Date().toISOString() })
+        .eq('id', userId);
+
+      if (userUpdateError) {
+        console.error('Update user city error:', userUpdateError);
+      }
+    }
+
+    // Check if preferences already exist for this user
+    const { data: existingPrefs } = await supabase
+      .from('UserPreference')
+      .select('id')
+      .eq('userId', userId)
+      .single();
+
+    let prefsResult;
+
+    if (existingPrefs) {
+      // Update existing preferences
+      const { data, error } = await supabase
+        .from('UserPreference')
+        .update({
+          categories: categories || [],
+          interests: interests || [],
+          updatedAt: new Date().toISOString(),
+        })
+        .eq('userId', userId)
+        .select()
+        .single();
+
+      prefsResult = { data, error };
+    } else {
+      // Create new preferences
+      const { data, error } = await supabase
+        .from('UserPreference')
+        .insert({
+          id: `pref_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          userId,
+          categories: categories || [],
+          interests: interests || [],
+        })
+        .select()
+        .single();
+
+      prefsResult = { data, error };
+    }
+
+    if (prefsResult.error) {
+      console.error('Save preferences error:', prefsResult.error);
+      throw createError('Failed to save preferences', 500);
+    }
+
+    res.json({
+      success: true,
+      message: 'Preferences saved successfully',
+      data: prefsResult.data,
+    });
+  } catch (error: any) {
+    console.error('Save preferences error:', error);
+    if (error.statusCode) {
+      throw error;
+    }
+    throw createError('Failed to save preferences', 500);
+  }
+};
