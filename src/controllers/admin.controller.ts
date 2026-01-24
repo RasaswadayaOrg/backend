@@ -753,3 +753,63 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
+
+// --- Ads Management (Mock Implementation until DB model is ready) ---
+
+export const getAds = async (req: AuthRequest, res: Response) => {
+  try {
+    // In future: fetch from Supabase 'Ad' table
+    res.json({ success: true, data: [] });
+  } catch (error) {
+    console.error('Error fetching ads:', error);
+    res.status(500).json(createError('Failed to fetch ads'));
+  }
+};
+
+export const getAd = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    res.json({ success: true, data: null });
+  } catch (error) {
+    res.status(500).json(createError('Failed to fetch ad'));
+  }
+};
+
+export const getAdsForPlacement = async (req: AuthRequest, res: Response) => {
+  const { placement } = req.params;
+  
+  try {
+    // Mock data to prevent frontend 500 error
+    const mockAds = [
+      {
+        id: 'ad-mock-1',
+        title: 'Featured Event',
+        imageUrl: '/deva_event.avif', 
+        linkUrl: '/events/event-002',
+        placement: placement,
+        isActive: true,
+        priority: 1
+      }
+    ];
+    
+    // Filter by placement if we had a real list, but here we just stamp request placement
+    if (placement === 'home-seasonal') {
+        // Return emtpy or something specific
+    }
+
+    res.json({
+      success: true,
+      data: mockAds
+    });
+  } catch (error) {
+    console.error(`Error fetching ads for placement ${placement}:`, error);
+    res.status(500).json(createError('Failed to fetch ads for placement'));
+  }
+};
+
+export const trackAdClick = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  // TODO: increment click count
+  res.json({ success: true });
+};
+

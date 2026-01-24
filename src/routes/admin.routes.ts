@@ -41,4 +41,10 @@ router.put('/users/:id/role', adminController.updateUserRole);
 // Recent activity endpoint
 router.get('/activity', adminController.getRecentActivity);
 
+// Ad endpoints
+router.get('/ads', adminController.getAds);
+router.get('/ads/placement/:placement', adminController.getAdsForPlacement);
+router.get('/ads/:id', adminController.getAd);
+router.post('/ads/:id/click', adminController.trackAdClick);
+
 export default router;
