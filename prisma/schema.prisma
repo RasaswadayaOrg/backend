@@ -68,6 +68,7 @@ model User {
   tickets         Ticket[]
   interests       Interest[]
   follows         Follower[]
+  roleApplications RoleApplication[]
   orders          Order[]
   cartItems       CartItem[]
   enquiries       Enquiry[]
@@ -89,7 +90,7 @@ model UserPreference {
 // ============ EVENTS ============
 
 model Event {
-  id          String    @id @default(cuid()))
+  id          String    @id @default(cuid())
   title       String
   description String
   eventDate   DateTime
