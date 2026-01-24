@@ -74,7 +74,7 @@ router.post(
   authController.googleAuth
 );
 
-// Save user preferences (location, interests, categories)
+// Save user preferences
 router.post(
   '/preferences',
   authenticate,
@@ -85,13 +85,6 @@ router.post(
   ],
   validateRequest,
   authController.savePreferences
-);
-
-// Get user preferences
-router.get(
-  '/preferences',
-  authenticate,
-  authController.getPreferences
 );
 
 export default router;
