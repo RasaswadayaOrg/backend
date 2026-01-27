@@ -5,6 +5,12 @@ import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
 import { createClient } from '@supabase/supabase-js';
+import { randomBytes } from 'crypto';
+
+// Helper to generate cuid-like ID
+function generateId(): string {
+  return 'c' + randomBytes(12).toString('base64url');
+}
 
 // Supabase Auth client (with service role for admin operations)
 const supabaseAuth = createClient(
@@ -37,7 +43,7 @@ export const register = async (req: AuthRequest, res: Response) => {
   const { email, password, fullName, firstName, lastName, phone, city } = req.body;
 
   // Check if user already exists
-  const { data: existingUser } = await supabase
+  const { data: existingUser } = await supabaseAuth
     .from('User')
     .select('id')
     .eq('email', email)
@@ -51,9 +57,10 @@ export const register = async (req: AuthRequest, res: Response) => {
   const hashedPassword = await bcrypt.hash(password, 12);
 
   // Create user
-  const { data: user, error } = await supabase
+  const { data: user, error } = await supabaseAuth
     .from('User')
     .insert({
+      id: generateId(),
       email,
       password: hashedPassword,
       fullName,
@@ -62,6 +69,8 @@ export const register = async (req: AuthRequest, res: Response) => {
       phone: phone || null,
       city: city || null,
       role: 'USER',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
     .select('id, email, fullName, firstName, lastName, phone, city, role, createdAt')
     .single();
@@ -97,7 +106,7 @@ export const login = async (req: AuthRequest, res: Response) => {
   const { email, password } = req.body;
 
   // Get user with password
-  const { data: user, error } = await supabase
+  const { data: user, error } = await supabaseAuth
     .from('User')
     .select('id, email, password, fullName, firstName, lastName, phone, city, role')
     .eq('email', email)
@@ -139,7 +148,7 @@ export const login = async (req: AuthRequest, res: Response) => {
 export const getCurrentUser = async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id;
 
-  const { data: user, error } = await supabase
+  const { data: user, error } = await supabaseAuth
     .from('User')
     .select('id, email, fullName, firstName, lastName, phone, city, role, createdAt')
     .eq('id', userId)
@@ -170,7 +179,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
   if (phone !== undefined) updateData.phone = phone;
   if (city !== undefined) updateData.city = city;
 
-  const { data: user, error } = await supabase
+  const { data: user, error } = await supabaseAuth
     .from('User')
     .update(updateData)
     .eq('id', userId)
@@ -194,7 +203,7 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
   const { currentPassword, newPassword } = req.body;
 
   // Get current password hash
-  const { data: user, error: fetchError } = await supabase
+  const { data: user, error: fetchError } = await supabaseAuth
     .from('User')
     .select('password')
     .eq('id', userId)
@@ -215,7 +224,7 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
   const hashedPassword = await bcrypt.hash(newPassword, 12);
 
   // Update password
-  const { error: updateError } = await supabase
+  const { error: updateError } = await supabaseAuth
     .from('User')
     .update({
       password: hashedPassword,
@@ -289,7 +298,7 @@ export const googleAuth = async (req: AuthRequest, res: Response) => {
     }
 
     // Check if user already exists in our database
-    const { data: existingUser } = await supabase
+    const { data: existingUser } = await supabaseAuth
       .from('User')
       .select('id, email, fullName, firstName, lastName, phone, city, role, avatarUrl')
       .eq('email', email)
@@ -299,7 +308,7 @@ export const googleAuth = async (req: AuthRequest, res: Response) => {
 
     if (existingUser) {
       // Update existing user with latest info from Google
-      const { data: updatedUser, error: updateError } = await supabase
+      const { data: updatedUser, error: updateError } = await supabaseAuth
         .from('User')
         .update({
           fullName: existingUser.fullName || fullName,
@@ -317,14 +326,17 @@ export const googleAuth = async (req: AuthRequest, res: Response) => {
       user = updatedUser;
     } else {
       // Create new user
-      const { data: newUser, error: insertError } = await supabase
+      const { data: newUser, error: insertError } = await supabaseAuth
         .from('User')
         .insert({
+          id: generateId(),
           email,
           fullName,
           avatarUrl,
           password: '', // No password for OAuth users
           role: 'USER',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         })
         .select('id, email, fullName, firstName, lastName, phone, city, role, avatarUrl')
         .single();
@@ -378,7 +390,7 @@ export const savePreferences = async (req: AuthRequest, res: Response) => {
   try {
     // Update user's city if provided
     if (city) {
-      const { error: userUpdateError } = await supabase
+      const { error: userUpdateError } = await supabaseAuth
         .from('User')
         .update({ city, updatedAt: new Date().toISOString() })
         .eq('id', userId);
@@ -389,7 +401,7 @@ export const savePreferences = async (req: AuthRequest, res: Response) => {
     }
 
     // Check if preferences already exist for this user
-    const { data: existingPrefs } = await supabase
+    const { data: existingPrefs } = await supabaseAuth
       .from('UserPreference')
       .select('id')
       .eq('userId', userId)
@@ -399,7 +411,7 @@ export const savePreferences = async (req: AuthRequest, res: Response) => {
 
     if (existingPrefs) {
       // Update existing preferences
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAuth
         .from('UserPreference')
         .update({
           categories: categories || [],
@@ -413,13 +425,15 @@ export const savePreferences = async (req: AuthRequest, res: Response) => {
       prefsResult = { data, error };
     } else {
       // Create new preferences
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAuth
         .from('UserPreference')
         .insert({
-          id: `pref_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          id: generateId(),
           userId,
           categories: categories || [],
           interests: interests || [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         })
         .select()
         .single();
