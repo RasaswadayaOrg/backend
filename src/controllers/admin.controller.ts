@@ -2,6 +2,19 @@ import { Response } from 'express';
 import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
+import { createClient } from '@supabase/supabase-js';
+import { randomBytes } from 'crypto';
+
+// Supabase Auth client (with service role for admin operations)
+const supabaseAuth = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!
+);
+
+// Helper to generate cuid-like ID
+function generateId(): string {
+  return 'c' + randomBytes(12).toString('base64url');
+}
 
 // Get admin dashboard stats (public - for admin panel use)
 export const getAdminStats = async (req: AuthRequest, res: Response) => {
@@ -107,9 +120,10 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
       facebook,
     } = req.body;
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAuth
       .from('Artist')
       .insert({
+        id: generateId(),
         name,
         profession,
         genre,
@@ -120,7 +134,9 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
         website,
         instagram,
         facebook,
-        userId: null // Admin created artists have no user initially
+        userId: null, // Admin created artists have no user initially
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       })
       .select()
       .single();
@@ -154,7 +170,7 @@ export const updateArtist = async (req: AuthRequest, res: Response) => {
       facebook,
     } = req.body;
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAuth
       .from('Artist')
       .update({
         name,
@@ -167,7 +183,7 @@ export const updateArtist = async (req: AuthRequest, res: Response) => {
         website,
         instagram,
         facebook,
-        updatedAt: new Date(),
+        updatedAt: new Date().toISOString(),
       })
       .eq('id', id)
       .select()
@@ -191,10 +207,10 @@ export const deleteArtist = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     // Delete related data first (Manual Cascade)
-    await supabase.from('Performance').delete().eq('artistId', id);
-    await supabase.from('Follower').delete().eq('artistId', id);
+    await supabaseAuth.from('Performance').delete().eq('artistId', id);
+    await supabaseAuth.from('Follower').delete().eq('artistId', id);
 
-    const { error } = await supabase
+    const { error } = await supabaseAuth
       .from('Artist')
       .delete()
       .eq('id', id);
