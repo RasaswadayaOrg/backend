@@ -107,9 +107,13 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
       facebook,
     } = req.body;
 
+    // Generate a unique ID for the artist
+    const artistId = `art-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
     const { data, error } = await supabase
       .from('Artist')
       .insert({
+        id: artistId,
         name,
         profession,
         genre,
@@ -120,7 +124,8 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
         website,
         instagram,
         facebook,
-        userId: null // Admin created artists have no user initially
+        userId: null, // Admin created artists have no user initially
+        updatedAt: new Date().toISOString()
       })
       .select()
       .single();
@@ -247,9 +252,13 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
       throw createError('No organizer available. Please create an admin user first.', 400);
     }
 
+    // Generate a unique ID for the event
+    const eventId = `evt-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
     const { data, error } = await supabase
       .from('Event')
       .insert({
+        id: eventId,
         title,
         description,
         eventDate,
@@ -260,21 +269,25 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
         imageUrl,
         capacity,
         ticketLink,
-        organizerId: eventOrganizerId
+        organizerId: eventOrganizerId,
+        updatedAt: new Date().toISOString()
       })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase insert error:', error);
+      throw error;
+    }
 
     res.status(201).json({
       success: true,
       data,
       message: 'Event created successfully'
     });
-  } catch (error) {
-    console.error('Create event error:', error);
-    throw createError('Failed to create event', 500);
+  } catch (error: any) {
+    console.error('Create event error:', error?.message || error);
+    throw createError(error?.message || 'Failed to create event', 500);
   }
 };
 
@@ -364,9 +377,13 @@ export const createAcademy = async (req: AuthRequest, res: Response) => {
       website
     } = req.body;
 
+    // Generate a unique ID for the academy
+    const academyId = `acd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
     const { data, error } = await supabase
       .from('Academy')
       .insert({
+        id: academyId,
         name,
         type,
         location,
@@ -374,7 +391,8 @@ export const createAcademy = async (req: AuthRequest, res: Response) => {
         imageUrl,
         phone,
         email,
-        website
+        website,
+        updatedAt: new Date().toISOString()
       })
       .select()
       .single();
@@ -474,9 +492,13 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     // Logic to ensure storeId exists or default to something could be added here
     // For now we assume the frontend sends a valid storeId or we let the DB fail
 
+    // Generate a unique ID for the product
+    const productId = `prd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
     const { data, error } = await supabase
       .from('Product')
       .insert({
+        id: productId,
         name,
         description,
         price,
@@ -484,7 +506,8 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         category,
         stock,
         storeId, 
-        isActive: true
+        isActive: true,
+        updatedAt: new Date().toISOString()
       })
       .select()
       .single();
