@@ -87,4 +87,11 @@ router.post(
   authController.savePreferences
 );
 
+// Get user preferences
+router.get(
+  '/preferences',
+  authenticate,
+  authController.getPreferences
+);
+
 export default router;

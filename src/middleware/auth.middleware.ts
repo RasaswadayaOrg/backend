@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { supabase } from '../lib/supabase';
+import { prisma } from '../lib/db';
 import { createError } from './error.middleware';
 
 export interface AuthRequest extends Request {
@@ -39,13 +39,17 @@ export const authenticate = async (
     };
 
     // Verify user still exists
-    const { data: user, error } = await supabase
-      .from('User')
-      .select('id, email, role, fullName')
-      .eq('id', decoded.id)
-      .single();
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        fullName: true,
+      },
+    });
 
-    if (error || !user) {
+    if (!user) {
       throw createError('User not found', 401);
     }
 
