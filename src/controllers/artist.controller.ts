@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { createId } from '@paralleldrive/cuid2';
 import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
@@ -147,9 +148,13 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
     throw createError('You already have an artist profile', 400);
   }
 
+  const artistId = createId();
+  const now = new Date().toISOString();
+
   const { data: artist, error } = await supabase
     .from('Artist')
     .insert({
+      id: artistId,
       name,
       profession,
       genre,
@@ -161,6 +166,8 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
       instagram: instagram || null,
       facebook: facebook || null,
       userId,
+      createdAt: now,
+      updatedAt: now,
     })
     .select('*')
     .single();
