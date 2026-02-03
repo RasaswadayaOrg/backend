@@ -320,32 +320,16 @@ export const googleAuth = async (req: AuthRequest, res: Response) => {
       throw createError('Email not found in Google account', 400);
     }
 
-    // Check if user already exists in our database
-    let user = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        interests: true,
-        preferences: true,
-      },
-    });
-
-    if (user) {
-      // Update existing user with latest info from Google
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          fullName: user.fullName || fullName,
-          avatarUrl: avatarUrl || user.avatarUrl,
+    // Use upsert to handle race conditions, with fallback for extreme concurrency
+    let user;
+    try {
+      user = await prisma.user.upsert({
+        where: { email },
+        update: {
+          fullName: fullName,
+          avatarUrl: avatarUrl,
         },
-        include: {
-          interests: true,
-          preferences: true,
-        },
-      });
-    } else {
-      // Create new user
-      user = await prisma.user.create({
-        data: {
+        create: {
           email,
           fullName,
           avatarUrl,
@@ -357,6 +341,23 @@ export const googleAuth = async (req: AuthRequest, res: Response) => {
           preferences: true,
         },
       });
+    } catch (upsertError: any) {
+      // If upsert fails due to race condition, just fetch the existing user
+      if (upsertError.code === 'P2002') {
+        user = await prisma.user.findUnique({
+          where: { email },
+          include: {
+            interests: true,
+            preferences: true,
+          },
+        });
+        
+        if (!user) {
+          throw createError('Failed to authenticate user', 500);
+        }
+      } else {
+        throw upsertError;
+      }
     }
 
     // Generate our own JWT token
