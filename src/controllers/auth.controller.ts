@@ -477,3 +477,73 @@ export const getPreferences = async (req: AuthRequest, res: Response) => {
     throw createError('Failed to fetch preferences', 500);
   }
 };
+
+// Admin login - validates admin role
+export const adminLogin = async (req: AuthRequest, res: Response) => {
+  const { email, password } = req.body;
+  
+  console.log('Admin login attempt:', { email, password: password ? '***' : 'missing', body: req.body });
+
+  try {
+    // Get user with password
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        password: true,
+        fullName: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password'
+      });
+    }
+
+    // Check if user is admin
+    if (user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin privileges required.'
+      });
+    }
+
+    // Compare password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password'
+      });
+    }
+
+    const token = generateToken(user);
+
+    res.json({
+      success: true,
+      message: 'Admin login successful',
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+      },
+      token,
+    });
+  } catch (error: any) {
+    console.error('Admin login error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Login failed. Please try again.'
+    });
+  }
+};

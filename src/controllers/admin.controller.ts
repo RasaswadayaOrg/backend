@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { supabase } from '../lib/supabase';
+import { prisma } from '../lib/db';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
 
@@ -699,12 +700,47 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       
     if (error) throw error;
     
-    // Transform data if needed, but for now returning raw user objects
-    // Be careful with password hashes if Supabase returns them (it shouldn't via standard select usually unless explicit, but good to be aware)
+    // Fetch pending applications for all users
+    const userIds = data?.map((user: any) => user.id) || [];
+    const pendingApplications = await prisma.roleApplication.findMany({
+      where: {
+        userId: { in: userIds },
+        status: 'PENDING'
+      },
+      select: {
+        userId: true,
+        role: true,
+        createdAt: true,
+        id: true
+      }
+    });
+
+    // Create a map of userId to pending applications
+    const pendingAppsMap = new Map();
+    pendingApplications.forEach((app: any) => {
+      if (!pendingAppsMap.has(app.userId)) {
+        pendingAppsMap.set(app.userId, []);
+      }
+      pendingAppsMap.get(app.userId).push(app);
+    });
+
+    // Enhance user data with pending application info
+    const enhancedData = data?.map((user: any) => ({
+      ...user,
+      pendingApplications: pendingAppsMap.get(user.id) || [],
+      hasPendingApplication: pendingAppsMap.has(user.id)
+    }));
+
+    // Sort users with pending applications at the top
+    const sortedData = enhancedData?.sort((a: any, b: any) => {
+      if (a.hasPendingApplication && !b.hasPendingApplication) return -1;
+      if (!a.hasPendingApplication && b.hasPendingApplication) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
     
     res.json({
       success: true,
-      data: data,
+      data: sortedData,
       pagination: {
         total: count || 0,
         page,
@@ -776,3 +812,21 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Get pending role applications count (admin)
+export const getPendingApplicationsCount = async (req: AuthRequest, res: Response) => {
+  try {
+    const count = await prisma.roleApplication.count({
+      where: {
+        status: 'PENDING'
+      }
+    });
+
+    res.json({
+      success: true,
+      data: { count }
+    });
+  } catch (error) {
+    console.error('Error fetching pending applications count:', error);
+    res.status(500).json(createError('Failed to fetch pending applications count'));
+  }
+};

@@ -14,6 +14,9 @@ router.get('/users', adminController.getUsers);
 router.put('/users/:id/role', adminController.updateUserRole);
 router.delete('/users/:id', adminController.deleteUser);
 
+// Pending applications endpoint
+router.get('/pending-applications-count', adminController.getPendingApplicationsCount);
+
 // Admin artist endpoints
 router.post('/artists', adminController.createArtist);
 router.put('/artists/:id', adminController.updateArtist);
