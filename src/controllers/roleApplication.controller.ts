@@ -150,14 +150,72 @@ export const getAllApplications = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Admin: Get single role application with full user details
+export const getApplicationById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const applicationId = Array.isArray(id) ? id[0] : id;
+
+    const application = await prisma.roleApplication.findUnique({
+      where: { id: applicationId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            fullName: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            city: true,
+            avatarUrl: true,
+            role: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }
+      }
+    });
+
+    if (!application) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Application not found' 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: application
+    });
+  } catch (error) {
+    console.error('Get application by ID error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch application details' 
+    });
+  }
+};
+
 // Admin: Approve or reject application
 export const updateApplicationStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status, rejectReason } = req.body;
 
     if (!['APPROVED', 'REJECTED'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status. Must be APPROVED or REJECTED.' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid status. Must be APPROVED or REJECTED.' 
+      });
+    }
+
+    // If rejecting, require a reject reason
+    if (status === 'REJECTED' && (!rejectReason || rejectReason.trim() === '')) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Reject reason is required when rejecting an application.' 
+      });
     }
 
     const applicationId = Array.isArray(id) ? id[0] : id;
@@ -168,11 +226,17 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response) =
     });
 
     if (!application) {
-      return res.status(404).json({ error: 'Application not found' });
+      return res.status(404).json({ 
+        success: false,
+        error: 'Application not found' 
+      });
     }
 
     if (application.status !== 'PENDING') {
-      return res.status(400).json({ error: 'Only pending applications can be updated' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Only pending applications can be updated' 
+      });
     }
 
     // Update application status
@@ -180,7 +244,7 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response) =
       where: { id: applicationId },
       data: {
         status: status as any,
-        notes: notes || null,
+        notes: status === 'REJECTED' ? rejectReason : null,
         updatedAt: new Date()
       }
     });
@@ -200,6 +264,9 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response) =
     });
   } catch (error) {
     console.error('Update application status error:', error);
-    res.status(500).json({ error: 'Failed to update application status' });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to update application status' 
+    });
   }
 };

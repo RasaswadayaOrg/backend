@@ -37,6 +37,12 @@ router.post('/products', adminController.createProduct);
 router.put('/products/:id', adminController.updateProduct);
 router.delete('/products/:id', adminController.deleteProduct);
 
+// Admin store endpoints
+router.get('/stores', adminController.getAllStores);
+router.post('/stores', adminController.createStore);
+router.put('/stores/:id', adminController.updateStore);
+router.delete('/stores/:id', adminController.deleteStore);
+
 // Admin user endpoints
 router.delete('/users/:id', adminController.deleteUser);
 router.put('/users/:id/role', adminController.updateUserRole);

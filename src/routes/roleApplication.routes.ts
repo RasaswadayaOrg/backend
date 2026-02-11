@@ -5,6 +5,7 @@ import {
   applyForRole, 
   getMyApplications,
   getAllApplications,
+  getApplicationById,
   updateApplicationStatus 
 } from '../controllers/roleApplication.controller';
 
@@ -24,6 +25,7 @@ router.get('/my-applications', authenticate, getMyApplications);
 
 // Admin routes
 router.get('/all', authenticate, authorize('ADMIN'), getAllApplications);
+router.get('/:id', authenticate, authorize('ADMIN'), getApplicationById);
 router.put('/:id/status', authenticate, authorize('ADMIN'), updateApplicationStatus);
 
 export default router;

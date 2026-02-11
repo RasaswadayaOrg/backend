@@ -1,6 +1,3 @@
-// Rasaswadaya Database Schema
-// Sri Lankan Cultural Arts Platform
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,7 +6,293 @@ datasource db {
   provider = "postgresql"
 }
 
-// ============ ENUMS ============
+model User {
+  id               String            @id @default(cuid())
+  email            String            @unique
+  password         String
+  fullName         String
+  firstName        String?
+  lastName         String?
+  phone            String?
+  city             String?
+  avatarUrl        String?
+  role             UserRole          @default(USER)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  artist           Artist?
+  cartItems        CartItem[]
+  enquiries        Enquiry[]
+  organizedEvents  Event[]           @relation("OrganizerEvents")
+  follows          Follower[]
+  interests        Interest[]
+  orders           Order[]
+  reminders        Reminder[]
+  roleApplications RoleApplication[]
+  RoleRequest      RoleRequest[]
+  store            Store?
+  tickets          Ticket[]
+  preferences      UserPreference?
+}
+
+model UserPreference {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  categories String[]
+  interests  String[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Event {
+  id           String        @id @default(cuid())
+  title        String
+  description  String
+  eventDate    DateTime
+  endDate      DateTime?
+  startTime    String?
+  endTime      String?
+  location     String
+  venue        String
+  city         String
+  category     String
+  imageUrl     String?
+  price        Float         @default(0)
+  capacity     Int?
+  ticketLink   String?
+  isFeatured   Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  organizerId  String
+  organizer    User          @relation("OrganizerEvents", fields: [organizerId], references: [id])
+  interests    Interest[]
+  performances Performance[]
+  tickets      Ticket[]
+}
+
+model Ticket {
+  id           String       @id @default(cuid())
+  quantity     Int          @default(1)
+  totalPrice   Float
+  status       TicketStatus @default(PENDING)
+  purchaseDate DateTime     @default(now())
+  userId       String
+  eventId      String
+  event        Event        @relation(fields: [eventId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+}
+
+model Interest {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, eventId])
+}
+
+model Artist {
+  id           String        @id @default(cuid())
+  name         String
+  profession   String
+  genre        String
+  bio          String?
+  photoUrl     String?
+  coverUrl     String?
+  location     String?
+  website      String?
+  instagram    String?
+  facebook     String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  userId       String?       @unique
+  user         User?         @relation(fields: [userId], references: [id])
+  followers    Follower[]
+  performances Performance[]
+}
+
+model Follower {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  artistId  String
+  artist    Artist   @relation(fields: [artistId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, artistId])
+}
+
+model Performance {
+  id       String  @id @default(cuid())
+  role     String?
+  artistId String
+  eventId  String
+  artist   Artist  @relation(fields: [artistId], references: [id])
+  event    Event   @relation(fields: [eventId], references: [id])
+
+  @@unique([artistId, eventId])
+}
+
+model Academy {
+  id          String    @id @default(cuid())
+  name        String
+  type        String
+  location    String
+  description String?
+  imageUrl    String?
+  phone       String?
+  email       String?
+  website     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  courses     Course[]
+  enquiries   Enquiry[]
+}
+
+model Course {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  duration    String?
+  fee         Float?
+  academyId   String
+  academy     Academy @relation(fields: [academyId], references: [id])
+}
+
+model Enquiry {
+  id        String        @id @default(cuid())
+  message   String
+  status    EnquiryStatus @default(PENDING)
+  response  String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  userId    String
+  academyId String
+  academy   Academy       @relation(fields: [academyId], references: [id])
+  user      User          @relation(fields: [userId], references: [id])
+}
+
+model Store {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  coverUrl    String?
+  location    String?
+  rating      Float     @default(0)
+  reviewCount Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  ownerId     String    @unique
+  products    Product[]
+  owner       User      @relation(fields: [ownerId], references: [id])
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?
+  images      String[]
+  category    String?
+  stock       Int         @default(0)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  storeId     String
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+  store       Store       @relation(fields: [storeId], references: [id])
+}
+
+model Category {
+  id      String  @id @default(cuid())
+  name    String  @unique
+  iconUrl String?
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, productId])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  totalPrice      Float
+  status          OrderStatus @default(PENDING)
+  shippingAddress String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+  items           OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  quantity  Int
+  unitPrice Float
+  orderId   String
+  productId String
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Reminder {
+  id        String   @id @default(cuid())
+  title     String
+  eventDate DateTime
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model RoleApplication {
+  id               String            @id @default(cuid())
+  userId           String
+  role             UserRole
+  status           ApplicationStatus @default(PENDING)
+  bio              String?
+  portfolioUrl     String?
+  proofDocumentUrl String?
+  notes            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RoleRequest {
+  id              String        @id @default(cuid())
+  userId          String
+  requestedRole   UserRole
+  documents       Json?
+  textFields      Json?
+  reason          String
+  contact         String
+  status          RequestStatus @default(PENDING)
+  rejectionReason String?
+  requestedAt     DateTime      @default(now())
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([requestedRole])
+  @@index([status])
+  @@index([userId])
+}
 
 enum UserRole {
   USER
@@ -46,305 +329,8 @@ enum ApplicationStatus {
   REJECTED
 }
 
-// ============ USERS ============
-
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  fullName  String
-  firstName String?
-  lastName  String?
-  phone     String?
-  city      String?
-  avatarUrl String?
-  role      UserRole @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  artist          Artist?
-  organizedEvents Event[]    @relation("OrganizerEvents")
-  tickets         Ticket[]
-  interests       Interest[]
-  follows         Follower[]
-  roleApplications RoleApplication[]
-  orders          Order[]
-  cartItems       CartItem[]
-  enquiries       Enquiry[]
-  store           Store?
-  reminders       Reminder[]
-  preferences     UserPreference?
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
-
-model UserPreference {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categories String[]
-  interests  String[]
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-// ============ EVENTS ============
-
-model Event {
-  id          String    @id @default(cuid())
-  title       String
-  description String
-  eventDate   DateTime
-  endDate     DateTime?
-  startTime   String?
-  endTime     String?
-  location    String
-  venue       String
-  city        String
-  category    String
-  imageUrl    String?
-  price       Float     @default(0)
-  capacity    Int?
-  ticketLink  String?
-  isFeatured  Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  // Relations
-  organizerId  String
-  organizer    User          @relation("OrganizerEvents", fields: [organizerId], references: [id])
-  tickets      Ticket[]
-  interests    Interest[]
-  performances Performance[]
-}
-
-model Ticket {
-  id           String       @id @default(cuid())
-  quantity     Int          @default(1)
-  totalPrice   Float
-  status       TicketStatus @default(PENDING)
-  purchaseDate DateTime     @default(now())
-
-  userId  String
-  user    User   @relation(fields: [userId], references: [id])
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id])
-}
-
-model Interest {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  userId  String
-  user    User   @relation(fields: [userId], references: [id])
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id])
-
-  @@unique([userId, eventId])
-}
-
-// ============ ARTISTS ============
-
-model Artist {
-  id         String   @id @default(cuid())
-  name       String
-  profession String
-  genre      String
-  bio        String?
-  photoUrl   String?
-  coverUrl   String?
-  location   String?
-  website    String?
-  instagram  String?
-  facebook   String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  // Optional link to User
-  userId String? @unique
-  user   User?   @relation(fields: [userId], references: [id])
-
-  // Relations
-  followers    Follower[]
-  performances Performance[]
-}
-
-model Follower {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  userId   String
-  user     User   @relation(fields: [userId], references: [id])
-  artistId String
-  artist   Artist @relation(fields: [artistId], references: [id])
-
-  @@unique([userId, artistId])
-}
-
-model Performance {
-  id   String  @id @default(cuid())
-  role String? // e.g., "Headliner", "Guest"
-
-  artistId String
-  artist   Artist @relation(fields: [artistId], references: [id])
-  eventId  String
-  event    Event  @relation(fields: [eventId], references: [id])
-
-  @@unique([artistId, eventId])
-}
-
-// ============ ACADEMIES ============
-
-model Academy {
-  id          String   @id @default(cuid())
-  name        String
-  type        String
-  location    String
-  description String?
-  imageUrl    String?
-  phone       String?
-  email       String?
-  website     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  courses   Course[]
-  enquiries Enquiry[]
-}
-
-model Course {
-  id          String  @id @default(cuid())
-  name        String
-  description String?
-  duration    String?
-  fee         Float?
-
-  academyId String
-  academy   Academy @relation(fields: [academyId], references: [id])
-}
-
-model Enquiry {
-  id        String        @id @default(cuid())
-  message   String
-  status    EnquiryStatus @default(PENDING)
-  response  String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-
-  userId    String
-  user      User    @relation(fields: [userId], references: [id])
-  academyId String
-  academy   Academy @relation(fields: [academyId], references: [id])
-}
-
-// ============ MARKETPLACE ============
-
-model Store {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  imageUrl    String?
-  coverUrl    String?
-  location    String?
-  rating      Float    @default(0)
-  reviewCount Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  ownerId String @unique
-  owner   User   @relation(fields: [ownerId], references: [id])
-
-  products Product[]
-}
-
-model Product {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  price       Float
-  imageUrl    String?
-  images      String[]
-  category    String?
-  stock       Int      @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  storeId String
-  store   Store  @relation(fields: [storeId], references: [id])
-
-  cartItems  CartItem[]
-  orderItems OrderItem[]
-}
-
-model Category {
-  id      String  @id @default(cuid())
-  name    String  @unique
-  iconUrl String?
-}
-
-model CartItem {
-  id        String   @id @default(cuid())
-  quantity  Int      @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  userId    String
-  user      User    @relation(fields: [userId], references: [id])
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  @@unique([userId, productId])
-}
-
-model Order {
-  id              String      @id @default(cuid())
-  totalPrice      Float
-  status          OrderStatus @default(PENDING)
-  shippingAddress String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  items OrderItem[]
-}
-
-model OrderItem {
-  id        String @id @default(cuid())
-  quantity  Int
-  unitPrice Float
-
-  orderId   String
-  order     Order   @relation(fields: [orderId], references: [id])
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-}
-
-// ============ USER PREFERENCES ============
-
-model Reminder {
-  id        String   @id @default(cuid())
-  title     String
-  eventDate DateTime
-  createdAt DateTime @default(now())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-}
-
-// Role Application Requests
-model RoleApplication {
-  id               String            @id @default(cuid())
-  userId           String
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role             UserRole          // The role being applied for (ARTIST, ORGANIZER)
-  status           ApplicationStatus @default(PENDING)
-  bio              String?           // For Artists
-  portfolioUrl     String?           // For Artists
-  proofDocumentUrl String?           // URL to uploaded proof (PDF/Image)
-  notes            String?           // Admin notes or extra user info
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-}
-
