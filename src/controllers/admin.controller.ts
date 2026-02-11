@@ -1,20 +1,8 @@
 import { Response } from 'express';
 import { supabase } from '../lib/supabase';
+import { prisma } from '../lib/db';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
-import { createClient } from '@supabase/supabase-js';
-import { randomBytes } from 'crypto';
-
-// Supabase Auth client (with service role for admin operations)
-const supabaseAuth = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!
-);
-
-// Helper to generate cuid-like ID
-function generateId(): string {
-  return 'c' + randomBytes(12).toString('base64url');
-}
 
 // Get admin dashboard stats (public - for admin panel use)
 export const getAdminStats = async (req: AuthRequest, res: Response) => {
@@ -120,10 +108,13 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
       facebook,
     } = req.body;
 
-    const { data, error } = await supabaseAuth
+    // Generate a unique ID for the artist
+    const artistId = `art-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    const { data, error } = await supabase
       .from('Artist')
       .insert({
-        id: generateId(),
+        id: artistId,
         name,
         profession,
         genre,
@@ -135,8 +126,7 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
         instagram,
         facebook,
         userId: null, // Admin created artists have no user initially
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       })
       .select()
       .single();
@@ -170,7 +160,7 @@ export const updateArtist = async (req: AuthRequest, res: Response) => {
       facebook,
     } = req.body;
 
-    const { data, error } = await supabaseAuth
+    const { data, error } = await supabase
       .from('Artist')
       .update({
         name,
@@ -183,7 +173,7 @@ export const updateArtist = async (req: AuthRequest, res: Response) => {
         website,
         instagram,
         facebook,
-        updatedAt: new Date().toISOString(),
+        updatedAt: new Date(),
       })
       .eq('id', id)
       .select()
@@ -207,10 +197,10 @@ export const deleteArtist = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     // Delete related data first (Manual Cascade)
-    await supabaseAuth.from('Performance').delete().eq('artistId', id);
-    await supabaseAuth.from('Follower').delete().eq('artistId', id);
+    await supabase.from('Performance').delete().eq('artistId', id);
+    await supabase.from('Follower').delete().eq('artistId', id);
 
-    const { error } = await supabaseAuth
+    const { error } = await supabase
       .from('Artist')
       .delete()
       .eq('id', id);
@@ -263,9 +253,13 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
       throw createError('No organizer available. Please create an admin user first.', 400);
     }
 
+    // Generate a unique ID for the event
+    const eventId = `evt-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
     const { data, error } = await supabase
       .from('Event')
       .insert({
+        id: eventId,
         title,
         description,
         eventDate,
@@ -276,21 +270,25 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
         imageUrl,
         capacity,
         ticketLink,
-        organizerId: eventOrganizerId
+        organizerId: eventOrganizerId,
+        updatedAt: new Date().toISOString()
       })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase insert error:', error);
+      throw error;
+    }
 
     res.status(201).json({
       success: true,
       data,
       message: 'Event created successfully'
     });
-  } catch (error) {
-    console.error('Create event error:', error);
-    throw createError('Failed to create event', 500);
+  } catch (error: any) {
+    console.error('Create event error:', error?.message || error);
+    throw createError(error?.message || 'Failed to create event', 500);
   }
 };
 
@@ -380,9 +378,13 @@ export const createAcademy = async (req: AuthRequest, res: Response) => {
       website
     } = req.body;
 
+    // Generate a unique ID for the academy
+    const academyId = `acd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
     const { data, error } = await supabase
       .from('Academy')
       .insert({
+        id: academyId,
         name,
         type,
         location,
@@ -390,7 +392,8 @@ export const createAcademy = async (req: AuthRequest, res: Response) => {
         imageUrl,
         phone,
         email,
-        website
+        website,
+        updatedAt: new Date().toISOString()
       })
       .select()
       .single();
@@ -487,12 +490,46 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       storeId
     } = req.body;
 
-    // Logic to ensure storeId exists or default to something could be added here
-    // For now we assume the frontend sends a valid storeId or we let the DB fail
+    // Validate that storeId is provided
+    if (!storeId) {
+      throw createError('Store ID is required to create a product', 400);
+    }
+
+    // Check if the store exists
+    const { data: storeExists, error: storeError } = await supabase
+      .from('Store')
+      .select('id')
+      .eq('id', storeId)
+      .single();
+
+    console.log('🔍 Store validation:', { 
+      storeId, 
+      storeExists, 
+      storeError: storeError?.message,
+      storeErrorCode: storeError?.code 
+    });
+
+    if (storeError || !storeExists) {
+      // If error is PGRST116, it means no rows found
+      if (storeError?.code === 'PGRST116') {
+        throw createError(`Store with ID '${storeId}' not found. Please create a store first or use a valid store ID.`, 404);
+      }
+      
+      if (storeError) {
+        console.error('Store validation error:', storeError);
+        throw createError(`Error validating store: ${storeError.message}`, 500);
+      }
+      
+      throw createError(`Store with ID '${storeId}' not found. Please create a store first or use a valid store ID.`, 404);
+    }
+
+    // Generate a unique ID for the product
+    const productId = `prd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     const { data, error } = await supabase
       .from('Product')
       .insert({
+        id: productId,
         name,
         description,
         price,
@@ -500,7 +537,8 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         category,
         stock,
         storeId, 
-        isActive: true
+        isActive: true,
+        updatedAt: new Date().toISOString()
       })
       .select()
       .single();
@@ -514,6 +552,12 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Create product error:', error);
+    
+    // Handle specific error cases
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error; // Re-throw custom errors
+    }
+    
     throw createError('Failed to create product', 500);
   }
 };
@@ -692,12 +736,47 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       
     if (error) throw error;
     
-    // Transform data if needed, but for now returning raw user objects
-    // Be careful with password hashes if Supabase returns them (it shouldn't via standard select usually unless explicit, but good to be aware)
+    // Fetch pending applications for all users
+    const userIds = data?.map((user: any) => user.id) || [];
+    const pendingApplications = await prisma.roleApplication.findMany({
+      where: {
+        userId: { in: userIds },
+        status: 'PENDING'
+      },
+      select: {
+        userId: true,
+        role: true,
+        createdAt: true,
+        id: true
+      }
+    });
+
+    // Create a map of userId to pending applications
+    const pendingAppsMap = new Map();
+    pendingApplications.forEach((app: any) => {
+      if (!pendingAppsMap.has(app.userId)) {
+        pendingAppsMap.set(app.userId, []);
+      }
+      pendingAppsMap.get(app.userId).push(app);
+    });
+
+    // Enhance user data with pending application info
+    const enhancedData = data?.map((user: any) => ({
+      ...user,
+      pendingApplications: pendingAppsMap.get(user.id) || [],
+      hasPendingApplication: pendingAppsMap.has(user.id)
+    }));
+
+    // Sort users with pending applications at the top
+    const sortedData = enhancedData?.sort((a: any, b: any) => {
+      if (a.hasPendingApplication && !b.hasPendingApplication) return -1;
+      if (!a.hasPendingApplication && b.hasPendingApplication) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
     
     res.json({
       success: true,
-      data: data,
+      data: sortedData,
       pagination: {
         total: count || 0,
         page,
@@ -769,63 +848,223 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
-
-// --- Ads Management (Mock Implementation until DB model is ready) ---
-
-export const getAds = async (req: AuthRequest, res: Response) => {
+// Get pending role applications count (admin)
+export const getPendingApplicationsCount = async (req: AuthRequest, res: Response) => {
   try {
-    // In future: fetch from Supabase 'Ad' table
-    res.json({ success: true, data: [] });
-  } catch (error) {
-    console.error('Error fetching ads:', error);
-    res.status(500).json(createError('Failed to fetch ads'));
-  }
-};
-
-export const getAd = async (req: AuthRequest, res: Response) => {
-  const { id } = req.params;
-  try {
-    res.json({ success: true, data: null });
-  } catch (error) {
-    res.status(500).json(createError('Failed to fetch ad'));
-  }
-};
-
-export const getAdsForPlacement = async (req: AuthRequest, res: Response) => {
-  const { placement } = req.params;
-  
-  try {
-    // Mock data to prevent frontend 500 error
-    const mockAds = [
-      {
-        id: 'ad-mock-1',
-        title: 'Featured Event',
-        imageUrl: '/deva_event.avif', 
-        linkUrl: '/events/event-002',
-        placement: placement,
-        isActive: true,
-        priority: 1
+    const count = await prisma.roleApplication.count({
+      where: {
+        status: 'PENDING'
       }
-    ];
-    
-    // Filter by placement if we had a real list, but here we just stamp request placement
-    if (placement === 'home-seasonal') {
-        // Return emtpy or something specific
-    }
+    });
 
     res.json({
       success: true,
-      data: mockAds
+      data: { count }
     });
   } catch (error) {
-    console.error(`Error fetching ads for placement ${placement}:`, error);
-    res.status(500).json(createError('Failed to fetch ads for placement'));
+    console.error('Error fetching pending applications count:', error);
+    res.status(500).json(createError('Failed to fetch pending applications count'));
   }
 };
 
-export const trackAdClick = async (req: AuthRequest, res: Response) => {
-  const { id } = req.params;
-  // TODO: increment click count
-  res.json({ success: true });
+// Get all stores (for dropdown/selection when creating products)
+export const getAllStores = async (req: AuthRequest, res: Response) => {
+  try {
+    const { data, error } = await supabase
+      .from('Store')
+      .select(`
+        id,
+        name,
+        description,
+        imageUrl,
+        location,
+        rating,
+        ownerId,
+        owner:User!Store_ownerId_fkey(id, fullName, email)
+      `)
+      .order('createdAt', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: data || [],
+      message: `Found ${data?.length || 0} stores`
+    });
+  } catch (error) {
+    console.error('Get stores error:', error);
+    throw createError('Failed to fetch stores', 500);
+  }
 };
 
+// Create a new store (admin)
+export const createStore = async (req: AuthRequest, res: Response) => {
+  try {
+    const {
+      name,
+      description,
+      imageUrl,
+      coverUrl,
+      location,
+      ownerId
+    } = req.body;
+
+    // Validate required fields
+    if (!name) {
+      throw createError('Store name is required', 400);
+    }
+
+    if (!ownerId) {
+      throw createError('Owner ID is required', 400);
+    }
+
+    // Check if owner exists
+    const { data: ownerExists, error: ownerError } = await supabase
+      .from('User')
+      .select('id, role')
+      .eq('id', ownerId)
+      .single();
+
+    if (ownerError || !ownerExists) {
+      throw createError(`User with ID '${ownerId}' not found`, 404);
+    }
+
+    // Generate a unique ID for the store
+    const storeId = `str-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    const { data, error } = await supabase
+      .from('Store')
+      .insert({
+        id: storeId,
+        name,
+        description,
+        imageUrl,
+        coverUrl,
+        location,
+        ownerId,
+        rating: 0,
+        reviewCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .select(`
+        id,
+        name,
+        description,
+        imageUrl,
+        coverUrl,
+        location,
+        rating,
+        reviewCount,
+        ownerId,
+        owner:User!Store_ownerId_fkey(id, fullName, email)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({
+      success: true,
+      data,
+      message: 'Store created successfully'
+    });
+  } catch (error) {
+    console.error('Create store error:', error);
+    
+    // Handle specific error cases
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    
+    throw createError('Failed to create store', 500);
+  }
+};
+
+// Update store (admin)
+export const updateStore = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      description,
+      imageUrl,
+      coverUrl,
+      location
+    } = req.body;
+
+    const { data, error } = await supabase
+      .from('Store')
+      .update({
+        name,
+        description,
+        imageUrl,
+        coverUrl,
+        location,
+        updatedAt: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(`
+        id,
+        name,
+        description,
+        imageUrl,
+        coverUrl,
+        location,
+        rating,
+        ownerId,
+        owner:User!Store_ownerId_fkey(id, fullName, email)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data,
+      message: 'Store updated successfully'
+    });
+  } catch (error) {
+    console.error('Update store error:', error);
+    throw createError('Failed to update store', 500);
+  }
+};
+
+// Delete store (admin)
+export const deleteStore = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if store has products
+    const { data: products, error: productsError } = await supabase
+      .from('Product')
+      .select('id')
+      .eq('storeId', id)
+      .limit(1);
+
+    if (productsError) throw productsError;
+
+    if (products && products.length > 0) {
+      throw createError('Cannot delete store with existing products. Please delete or reassign products first.', 400);
+    }
+
+    const { error } = await supabase
+      .from('Store')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Store deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete store error:', error);
+    
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    
+    throw createError('Failed to delete store', 500);
+  }
+};

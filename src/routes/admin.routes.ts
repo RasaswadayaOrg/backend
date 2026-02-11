@@ -14,6 +14,9 @@ router.get('/users', adminController.getUsers);
 router.put('/users/:id/role', adminController.updateUserRole);
 router.delete('/users/:id', adminController.deleteUser);
 
+// Pending applications endpoint
+router.get('/pending-applications-count', adminController.getPendingApplicationsCount);
+
 // Admin artist endpoints
 router.post('/artists', adminController.createArtist);
 router.put('/artists/:id', adminController.updateArtist);
@@ -33,6 +36,12 @@ router.delete('/academies/:id', adminController.deleteAcademy);
 router.post('/products', adminController.createProduct);
 router.put('/products/:id', adminController.updateProduct);
 router.delete('/products/:id', adminController.deleteProduct);
+
+// Admin store endpoints
+router.get('/stores', adminController.getAllStores);
+router.post('/stores', adminController.createStore);
+router.put('/stores/:id', adminController.updateStore);
+router.delete('/stores/:id', adminController.deleteStore);
 
 // Admin user endpoints
 router.delete('/users/:id', adminController.deleteUser);

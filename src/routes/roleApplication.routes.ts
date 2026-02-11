@@ -1,7 +1,13 @@
 import express from 'express';
 import multer from 'multer';
-import { authenticate } from '../middleware/auth.middleware';
-import { applyForRole, getMyApplications } from '../controllers/roleApplication.controller';
+import { authenticate, authorize } from '../middleware/auth.middleware';
+import { 
+  applyForRole, 
+  getMyApplications,
+  getAllApplications,
+  getApplicationById,
+  updateApplicationStatus 
+} from '../controllers/roleApplication.controller';
 
 const router = express.Router();
 
@@ -13,7 +19,13 @@ const upload = multer({
   }
 });
 
+// User routes
 router.post('/apply', authenticate, upload.single('proofDocument'), applyForRole);
 router.get('/my-applications', authenticate, getMyApplications);
+
+// Admin routes
+router.get('/all', authenticate, authorize('ADMIN'), getAllApplications);
+router.get('/:id', authenticate, authorize('ADMIN'), getApplicationById);
+router.put('/:id/status', authenticate, authorize('ADMIN'), updateApplicationStatus);
 
 export default router;

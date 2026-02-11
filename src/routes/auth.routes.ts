@@ -31,6 +31,17 @@ router.post(
   authController.login
 );
 
+// Admin Login
+router.post(
+  '/admin-login',
+  [
+    body('email').notEmpty().withMessage('Email/Username is required'),
+    body('password').notEmpty().withMessage('Password is required'),
+  ],
+  validateRequest,
+  authController.adminLogin
+);
+
 // Get current user
 router.get('/me', authenticate, authController.getCurrentUser);
 
@@ -85,6 +96,13 @@ router.post(
   ],
   validateRequest,
   authController.savePreferences
+);
+
+// Get user preferences
+router.get(
+  '/preferences',
+  authenticate,
+  authController.getPreferences
 );
 
 export default router;
