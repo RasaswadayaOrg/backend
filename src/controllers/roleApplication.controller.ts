@@ -197,7 +197,171 @@ export const getApplicationById = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Admin: Approve or reject application
+// Admin: Approve application
+export const approveApplication = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { description } = req.body; // Optional approval notes/description
+    const applicationId = Array.isArray(id) ? id[0] : id;
+
+    const application = await prisma.roleApplication.findUnique({
+      where: { id: applicationId },
+      include: { user: true }
+    });
+
+    if (!application) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Application not found' 
+      });
+    }
+
+    if (application.status !== 'PENDING') {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Only pending applications can be approved' 
+      });
+    }
+
+    // Update application status to APPROVED
+    const updatedApplication = await prisma.roleApplication.update({
+      where: { id: applicationId },
+      data: {
+        status: 'APPROVED',
+        notes: description || null,
+        updatedAt: new Date()
+      }
+    });
+
+    // Update user role
+    await prisma.user.update({
+      where: { id: application.userId },
+      data: { role: application.role as any }
+    });
+
+    res.json({
+      success: true,
+      message: 'Application approved successfully',
+      data: updatedApplication
+    });
+  } catch (error) {
+    console.error('Approve application error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to approve application' 
+    });
+  }
+};
+
+// Admin: Reject application
+export const rejectApplication = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { rejectionReason, description } = req.body;
+    const applicationId = Array.isArray(id) ? id[0] : id;
+
+    // Rejection reason is required
+    if (!rejectionReason || rejectionReason.trim() === '') {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Rejection reason is required when rejecting an application.' 
+      });
+    }
+
+    const application = await prisma.roleApplication.findUnique({
+      where: { id: applicationId },
+      include: { user: true }
+    });
+
+    if (!application) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Application not found' 
+      });
+    }
+
+    if (application.status !== 'PENDING') {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Only pending applications can be rejected' 
+      });
+    }
+
+    // Build rejection notes with reason and optional description
+    const notes = description 
+      ? `Reason: ${rejectionReason}\nDescription: ${description}`
+      : `Reason: ${rejectionReason}`;
+
+    // Update application status to REJECTED
+    const updatedApplication = await prisma.roleApplication.update({
+      where: { id: applicationId },
+      data: {
+        status: 'REJECTED',
+        notes,
+        updatedAt: new Date()
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Application rejected successfully',
+      data: updatedApplication
+    });
+  } catch (error) {
+    console.error('Reject application error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to reject application' 
+    });
+  }
+};
+
+// Admin: Get pending applications only
+export const getPendingApplications = async (req: AuthRequest, res: Response) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    const [applications, total] = await Promise.all([
+      prisma.roleApplication.findMany({
+        where: { status: 'PENDING' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              fullName: true,
+              role: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: Number(limit)
+      }),
+      prisma.roleApplication.count({ where: { status: 'PENDING' } })
+    ]);
+
+    res.json({
+      success: true,
+      data: applications,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Get pending applications error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch pending applications' 
+    });
+  }
+};
+
+// Keep the old function for backward compatibility
 export const updateApplicationStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
