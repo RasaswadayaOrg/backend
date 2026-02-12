@@ -11,6 +11,7 @@ router.get('/orders', adminController.getOrders);
 
 // Admin users endpoint
 router.get('/users', adminController.getUsers);
+router.get('/users/:userId', adminController.getUserById);
 router.put('/users/:id/role', adminController.updateUserRole);
 router.delete('/users/:id', adminController.deleteUser);
 
