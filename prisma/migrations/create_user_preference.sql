@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS "UserPreference" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "categories" TEXT[] DEFAULT '{}',
-    "culturalInterests" TEXT[] DEFAULT '{}',
+    "interests" TEXT[] DEFAULT '{}',
     "userId" TEXT NOT NULL,
 
     CONSTRAINT "UserPreference_pkey" PRIMARY KEY ("id")

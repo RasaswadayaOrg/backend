@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import path from 'path';
 import 'express-async-errors';
 import dotenv from 'dotenv';
 
@@ -20,6 +21,7 @@ import orderRoutes from './routes/order.routes';
 import userRoutes from './routes/user.routes';
 import adminRoutes from './routes/admin.routes';
 import roleApplicationRoutes from './routes/roleApplication.routes';
+import roleRequestRoutes from './routes/roleRequest.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -37,6 +39,9 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Static file serving for uploads
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -51,6 +56,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/role-applications', roleApplicationRoutes);
+app.use('/api/role-requests', roleRequestRoutes);
 
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);

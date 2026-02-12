@@ -26,9 +26,11 @@
   },
   "homepage": "https://github.com/RasaswadayaOrg/backend#readme",
   "dependencies": {
+    "@paralleldrive/cuid2": "^3.3.0",
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.2.0",
     "@supabase/supabase-js": "^2.90.1",
+
     "@types/pg": "^8.16.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
@@ -37,6 +39,7 @@
     "express-async-errors": "^3.1.1",
     "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
+    "jose": "^6.1.3",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
@@ -51,6 +54,7 @@
     "@types/morgan": "^1.9.10",
     "@types/multer": "^2.0.0",
     "@types/node": "^25.0.6",
+    "@types/pg": "^8.16.0",
     "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

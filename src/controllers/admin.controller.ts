@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { supabase } from '../lib/supabase';
+import { prisma } from '../lib/db';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
 
@@ -489,8 +490,38 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       storeId
     } = req.body;
 
-    // Logic to ensure storeId exists or default to something could be added here
-    // For now we assume the frontend sends a valid storeId or we let the DB fail
+    // Validate that storeId is provided
+    if (!storeId) {
+      throw createError('Store ID is required to create a product', 400);
+    }
+
+    // Check if the store exists
+    const { data: storeExists, error: storeError } = await supabase
+      .from('Store')
+      .select('id')
+      .eq('id', storeId)
+      .single();
+
+    console.log('🔍 Store validation:', { 
+      storeId, 
+      storeExists, 
+      storeError: storeError?.message,
+      storeErrorCode: storeError?.code 
+    });
+
+    if (storeError || !storeExists) {
+      // If error is PGRST116, it means no rows found
+      if (storeError?.code === 'PGRST116') {
+        throw createError(`Store with ID '${storeId}' not found. Please create a store first or use a valid store ID.`, 404);
+      }
+      
+      if (storeError) {
+        console.error('Store validation error:', storeError);
+        throw createError(`Error validating store: ${storeError.message}`, 500);
+      }
+      
+      throw createError(`Store with ID '${storeId}' not found. Please create a store first or use a valid store ID.`, 404);
+    }
 
     // Generate a unique ID for the product
     const productId = `prd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -521,6 +552,12 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Create product error:', error);
+    
+    // Handle specific error cases
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error; // Re-throw custom errors
+    }
+    
     throw createError('Failed to create product', 500);
   }
 };
@@ -699,12 +736,47 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       
     if (error) throw error;
     
-    // Transform data if needed, but for now returning raw user objects
-    // Be careful with password hashes if Supabase returns them (it shouldn't via standard select usually unless explicit, but good to be aware)
+    // Fetch pending applications for all users
+    const userIds = data?.map((user: any) => user.id) || [];
+    const pendingApplications = await prisma.roleApplication.findMany({
+      where: {
+        userId: { in: userIds },
+        status: 'PENDING'
+      },
+      select: {
+        userId: true,
+        role: true,
+        createdAt: true,
+        id: true
+      }
+    });
+
+    // Create a map of userId to pending applications
+    const pendingAppsMap = new Map();
+    pendingApplications.forEach((app: any) => {
+      if (!pendingAppsMap.has(app.userId)) {
+        pendingAppsMap.set(app.userId, []);
+      }
+      pendingAppsMap.get(app.userId).push(app);
+    });
+
+    // Enhance user data with pending application info
+    const enhancedData = data?.map((user: any) => ({
+      ...user,
+      pendingApplications: pendingAppsMap.get(user.id) || [],
+      hasPendingApplication: pendingAppsMap.has(user.id)
+    }));
+
+    // Sort users with pending applications at the top
+    const sortedData = enhancedData?.sort((a: any, b: any) => {
+      if (a.hasPendingApplication && !b.hasPendingApplication) return -1;
+      if (!a.hasPendingApplication && b.hasPendingApplication) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
     
     res.json({
       success: true,
-      data: data,
+      data: sortedData,
       pagination: {
         total: count || 0,
         page,
@@ -776,3 +848,223 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Get pending role applications count (admin)
+export const getPendingApplicationsCount = async (req: AuthRequest, res: Response) => {
+  try {
+    const count = await prisma.roleApplication.count({
+      where: {
+        status: 'PENDING'
+      }
+    });
+
+    res.json({
+      success: true,
+      data: { count }
+    });
+  } catch (error) {
+    console.error('Error fetching pending applications count:', error);
+    res.status(500).json(createError('Failed to fetch pending applications count'));
+  }
+};
+
+// Get all stores (for dropdown/selection when creating products)
+export const getAllStores = async (req: AuthRequest, res: Response) => {
+  try {
+    const { data, error } = await supabase
+      .from('Store')
+      .select(`
+        id,
+        name,
+        description,
+        imageUrl,
+        location,
+        rating,
+        ownerId,
+        owner:User!Store_ownerId_fkey(id, fullName, email)
+      `)
+      .order('createdAt', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: data || [],
+      message: `Found ${data?.length || 0} stores`
+    });
+  } catch (error) {
+    console.error('Get stores error:', error);
+    throw createError('Failed to fetch stores', 500);
+  }
+};
+
+// Create a new store (admin)
+export const createStore = async (req: AuthRequest, res: Response) => {
+  try {
+    const {
+      name,
+      description,
+      imageUrl,
+      coverUrl,
+      location,
+      ownerId
+    } = req.body;
+
+    // Validate required fields
+    if (!name) {
+      throw createError('Store name is required', 400);
+    }
+
+    if (!ownerId) {
+      throw createError('Owner ID is required', 400);
+    }
+
+    // Check if owner exists
+    const { data: ownerExists, error: ownerError } = await supabase
+      .from('User')
+      .select('id, role')
+      .eq('id', ownerId)
+      .single();
+
+    if (ownerError || !ownerExists) {
+      throw createError(`User with ID '${ownerId}' not found`, 404);
+    }
+
+    // Generate a unique ID for the store
+    const storeId = `str-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    const { data, error } = await supabase
+      .from('Store')
+      .insert({
+        id: storeId,
+        name,
+        description,
+        imageUrl,
+        coverUrl,
+        location,
+        ownerId,
+        rating: 0,
+        reviewCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .select(`
+        id,
+        name,
+        description,
+        imageUrl,
+        coverUrl,
+        location,
+        rating,
+        reviewCount,
+        ownerId,
+        owner:User!Store_ownerId_fkey(id, fullName, email)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({
+      success: true,
+      data,
+      message: 'Store created successfully'
+    });
+  } catch (error) {
+    console.error('Create store error:', error);
+    
+    // Handle specific error cases
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    
+    throw createError('Failed to create store', 500);
+  }
+};
+
+// Update store (admin)
+export const updateStore = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      description,
+      imageUrl,
+      coverUrl,
+      location
+    } = req.body;
+
+    const { data, error } = await supabase
+      .from('Store')
+      .update({
+        name,
+        description,
+        imageUrl,
+        coverUrl,
+        location,
+        updatedAt: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(`
+        id,
+        name,
+        description,
+        imageUrl,
+        coverUrl,
+        location,
+        rating,
+        ownerId,
+        owner:User!Store_ownerId_fkey(id, fullName, email)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data,
+      message: 'Store updated successfully'
+    });
+  } catch (error) {
+    console.error('Update store error:', error);
+    throw createError('Failed to update store', 500);
+  }
+};
+
+// Delete store (admin)
+export const deleteStore = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if store has products
+    const { data: products, error: productsError } = await supabase
+      .from('Product')
+      .select('id')
+      .eq('storeId', id)
+      .limit(1);
+
+    if (productsError) throw productsError;
+
+    if (products && products.length > 0) {
+      throw createError('Cannot delete store with existing products. Please delete or reassign products first.', 400);
+    }
+
+    const { error } = await supabase
+      .from('Store')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Store deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete store error:', error);
+    
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    
+    throw createError('Failed to delete store', 500);
+  }
+};
