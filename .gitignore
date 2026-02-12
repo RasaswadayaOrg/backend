@@ -7,3 +7,4 @@ node_modules
 # Uploaded files - user documents
 uploads/
 uploads/role-documents/
+prisma/migrations/create_sponsored_ad.sql
