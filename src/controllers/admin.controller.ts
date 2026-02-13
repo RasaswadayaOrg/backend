@@ -736,35 +736,39 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       
     if (error) throw error;
     
-    // Fetch pending applications for all users
+    // Fetch pending role requests for all users
     const userIds = data?.map((user: any) => user.id) || [];
-    const pendingApplications = await prisma.roleApplication.findMany({
+    const pendingRequests = await prisma.roleRequest.findMany({
       where: {
         userId: { in: userIds },
         status: 'PENDING'
       },
       select: {
         userId: true,
-        role: true,
-        createdAt: true,
+        requestedRole: true,
+        requestedAt: true,
         id: true
       }
     });
 
-    // Create a map of userId to pending applications
-    const pendingAppsMap = new Map();
-    pendingApplications.forEach((app: any) => {
-      if (!pendingAppsMap.has(app.userId)) {
-        pendingAppsMap.set(app.userId, []);
+    // Create a map of userId to pending requests
+    const pendingRequestsMap = new Map();
+    pendingRequests.forEach((req: any) => {
+      if (!pendingRequestsMap.has(req.userId)) {
+        pendingRequestsMap.set(req.userId, []);
       }
-      pendingAppsMap.get(app.userId).push(app);
+      pendingRequestsMap.get(req.userId).push({
+        id: req.id,
+        role: req.requestedRole,
+        createdAt: req.requestedAt
+      });
     });
 
-    // Enhance user data with pending application info
+    // Enhance user data with pending request info
     const enhancedData = data?.map((user: any) => ({
       ...user,
-      pendingApplications: pendingAppsMap.get(user.id) || [],
-      hasPendingApplication: pendingAppsMap.has(user.id)
+      pendingApplications: pendingRequestsMap.get(user.id) || [],
+      hasPendingApplication: pendingRequestsMap.has(user.id)
     }));
 
     // Sort users with pending applications at the top
@@ -848,10 +852,10 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get pending role applications count (admin)
+// Get pending role requests count (admin)
 export const getPendingApplicationsCount = async (req: AuthRequest, res: Response) => {
   try {
-    const count = await prisma.roleApplication.count({
+    const count = await prisma.roleRequest.count({
       where: {
         status: 'PENDING'
       }
@@ -862,8 +866,8 @@ export const getPendingApplicationsCount = async (req: AuthRequest, res: Respons
       data: { count }
     });
   } catch (error) {
-    console.error('Error fetching pending applications count:', error);
-    res.status(500).json(createError('Failed to fetch pending applications count'));
+    console.error('Error fetching pending requests count:', error);
+    res.status(500).json(createError('Failed to fetch pending requests count'));
   }
 };
 
@@ -1066,5 +1070,64 @@ export const deleteStore = async (req: AuthRequest, res: Response) => {
     }
     
     throw createError('Failed to delete store', 500);
+  }
+};
+
+// Get user by ID with role requests
+export const getUserById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId || typeof userId !== 'string') {
+      throw createError('Valid User ID is required', 400);
+    }
+
+    // Fetch user with role requests
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        RoleRequest: {
+          orderBy: {
+            createdAt: 'desc'
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      throw createError('User not found', 404);
+    }
+
+    // Transform RoleRequest to match frontend expectations
+    const transformedUser = {
+      ...user,
+      roleApplications: user.RoleRequest?.map((req: any) => ({
+        id: req.id,
+        role: req.requestedRole,
+        status: req.status,
+        bio: req.reason,
+        portfolioUrl: req.textFields ? JSON.stringify(req.textFields) : null,
+        proofDocumentUrl: req.documents ? JSON.stringify(req.documents) : null,
+        notes: req.rejectionReason || null,
+        createdAt: req.requestedAt,
+        updatedAt: req.updatedAt
+      })) || []
+    };
+
+    // Remove the RoleRequest property from response
+    const { RoleRequest, ...userResponse } = transformedUser;
+
+    res.json({
+      success: true,
+      data: userResponse
+    });
+  } catch (error) {
+    console.error('Get user by ID error:', error);
+    
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    
+    throw createError('Failed to fetch user details', 500);
   }
 };

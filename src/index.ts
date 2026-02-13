@@ -20,7 +20,6 @@ import cartRoutes from './routes/cart.routes';
 import orderRoutes from './routes/order.routes';
 import userRoutes from './routes/user.routes';
 import adminRoutes from './routes/admin.routes';
-import roleApplicationRoutes from './routes/roleApplication.routes';
 import roleRequestRoutes from './routes/roleRequest.routes';
 
 // Import middleware
@@ -55,7 +54,6 @@ app.use('/api/academies', academyRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api/role-applications', roleApplicationRoutes);
 app.use('/api/role-requests', roleRequestRoutes);
 
 app.use('/api/orders', orderRoutes);
