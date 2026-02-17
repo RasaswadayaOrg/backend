@@ -17,7 +17,6 @@ export const getUserOrders = async (req: AuthRequest, res: Response) => {
       items:OrderItem(
         id,
         quantity,
-        unitPrice,
         product:Product(id, name, imageUrl)
       )
     `, { count: 'exact' })
@@ -54,7 +53,6 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
       items:OrderItem(
         id,
         quantity,
-        unitPrice,
         product:Product(id, name, imageUrl, store:Store!Product_storeId_fkey(id, name))
       )
     `)
@@ -87,7 +85,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     .select(`
       id,
       quantity,
-      product:Product(id, price, stock, name)
+      product:Product(id, stock, name)
     `)
     .eq('userId', userId);
 
@@ -99,12 +97,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     throw createError('Cart is empty', 400);
   }
 
-  // Validate stock and calculate total
-  let totalPrice = 0;
+  // Validate stock
   const orderItems: Array<{
     productId: string;
     quantity: number;
-    unitPrice: number;
   }> = [];
 
   for (const item of cartItems) {
@@ -114,11 +110,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       throw createError(`Insufficient stock for ${product.name}`, 400);
     }
 
-    totalPrice += product.price * item.quantity;
     orderItems.push({
       productId: product.id,
       quantity: item.quantity,
-      unitPrice: product.price,
     });
   }
 
@@ -127,7 +121,6 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     .from('Order')
     .insert({
       userId,
-      totalPrice,
       shippingAddress,
       status: 'PENDING',
     })
@@ -174,7 +167,6 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       items:OrderItem(
         id,
         quantity,
-        unitPrice,
         product:Product(id, name, imageUrl)
       )
     `)

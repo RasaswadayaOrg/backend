@@ -46,7 +46,6 @@ router.post(
     body('venue').notEmpty().withMessage('Venue is required'),
     body('city').notEmpty().withMessage('City is required'),
     body('category').notEmpty().withMessage('Category is required'),
-    body('price').optional().isFloat({ min: 0 }),
     body('capacity').optional().isInt({ min: 1 }),
   ],
   validateRequest,

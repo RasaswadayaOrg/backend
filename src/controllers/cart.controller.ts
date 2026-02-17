@@ -13,7 +13,7 @@ export const getCart = async (req: AuthRequest, res: Response) => {
       id,
       quantity,
       createdAt,
-      product:Product(id, name, price, imageUrl, stock, storeId, store:Store!Product_storeId_fkey(id, name))
+      product:Product(id, name, imageUrl, stock, storeId, store:Store!Product_storeId_fkey(id, name))
     `)
     .eq('userId', userId)
     .order('createdAt', { ascending: false });
@@ -22,24 +22,11 @@ export const getCart = async (req: AuthRequest, res: Response) => {
     throw createError('Failed to fetch cart', 500);
   }
 
-  // Calculate totals
-  let subtotal = 0;
-  const items = cartItems?.map((item) => {
-    const product = item.product as any;
-    const itemTotal = product.price * item.quantity;
-    subtotal += itemTotal;
-    return {
-      ...item,
-      itemTotal,
-    };
-  }) || [];
-
   res.json({
     success: true,
     data: {
-      items,
-      subtotal,
-      itemCount: items.length,
+      items: cartItems || [],
+      itemCount: cartItems?.length || 0,
     },
   });
 };

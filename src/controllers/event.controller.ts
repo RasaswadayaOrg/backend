@@ -178,7 +178,6 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
     city,
     category,
     imageUrl,
-    price,
     capacity,
     ticketLink,
     isFeatured,
@@ -198,7 +197,6 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
       city,
       category,
       imageUrl: imageUrl || null,
-      price: price || 0,
       capacity: capacity || null,
       ticketLink: ticketLink || null,
       isFeatured: isFeatured || false,
@@ -247,7 +245,7 @@ export const updateEvent = async (req: AuthRequest, res: Response) => {
 
   const allowedFields = [
     'title', 'description', 'eventDate', 'endDate', 'startTime', 'endTime',
-    'location', 'venue', 'city', 'category', 'imageUrl', 'price',
+    'location', 'venue', 'city', 'category', 'imageUrl',
     'capacity', 'ticketLink', 'isFeatured'
   ];
 

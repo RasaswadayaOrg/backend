@@ -23,16 +23,8 @@ export const getAdminStats = async (req: AuthRequest, res: Response) => {
       supabase.from('Product').select('id', { count: 'exact', head: true }),
       supabase.from('Academy').select('id', { count: 'exact', head: true }),
       supabase.from('Store').select('id', { count: 'exact', head: true }),
-      supabase.from('Order').select('id, totalPrice', { count: 'exact' })
+      supabase.from('Order').select('id', { count: 'exact', head: true })
     ]);
-
-    // Calculate total revenue
-    let totalRevenue = 0;
-    if (ordersResult.data) {
-      totalRevenue = ordersResult.data.reduce((sum, order: any) => 
-        sum + (parseFloat(order.totalPrice) || 0), 0
-      );
-    }
 
     res.json({
       success: true,
@@ -44,7 +36,6 @@ export const getAdminStats = async (req: AuthRequest, res: Response) => {
         totalAcademies: academiesResult.count || 0,
         totalStores: storesResult.count || 0,
         totalOrders: ordersResult.count || 0,
-        totalRevenue
       }
     });
   } catch (error) {
@@ -483,7 +474,6 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     const {
       name,
       description,
-      price,
       imageUrl,
       category,
       stock,
@@ -532,7 +522,6 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         id: productId,
         name,
         description,
-        price,
         imageUrl,
         category,
         stock,
@@ -568,7 +557,6 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     const {
       name,
       description,
-      price,
       imageUrl,
       category,
       stock,
@@ -580,7 +568,6 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       .update({
         name,
         description,
-        price,
         imageUrl,
         category,
         stock,
@@ -634,7 +621,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response) => {
     const [recentOrders, recentUsers, recentEvents] = await Promise.all([
       supabase
         .from('Order')
-        .select('id, totalPrice, status, createdAt, user:User!Order_userId_fkey(fullName)')
+        .select('id, status, createdAt, user:User!Order_userId_fkey(fullName)')
         .order('createdAt', { ascending: false })
         .limit(5),
       supabase
@@ -659,7 +646,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response) => {
           type: 'order',
           user: order.user?.fullName || 'Customer',
           action: 'placed an order',
-          target: `LKR ${Number(order.totalPrice).toLocaleString()}`,
+          target: `Order #${order.id.substring(0, 8)}`,
           time: order.createdAt,
           status: order.status
         });
