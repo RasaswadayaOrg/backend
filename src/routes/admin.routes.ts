@@ -48,6 +48,10 @@ router.delete('/stores/:id', adminController.deleteStore);
 router.delete('/users/:id', adminController.deleteUser);
 router.put('/users/:id/role', adminController.updateUserRole);
 
+// Admin organizer endpoints
+router.post('/organizers', adminController.createOrganizer);
+router.put('/organizers/:id', adminController.updateOrganizer);
+
 // Recent activity endpoint
 router.get('/activity', adminController.getRecentActivity);
 

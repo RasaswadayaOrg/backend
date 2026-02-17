@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { prisma } from '../lib/db';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
+import bcrypt from 'bcryptjs';
 
 // Get admin dashboard stats (public - for admin panel use)
 export const getAdminStats = async (req: AuthRequest, res: Response) => {
@@ -1131,3 +1132,66 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
     throw createError('Failed to fetch user details', 500);
   }
 };
+
+// --- Organizer Management ---
+
+export const createOrganizer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { email, password, fullName, phone, city, avatarUrl, bio } = req.body;
+    
+    // Check if user exists
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+        return res.status(400).json({ success: false, message: 'User with this email already exists' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        fullName,
+        phone,
+        city,
+        avatarUrl,
+        role: 'ORGANIZER'
+      }
+    });
+
+    res.status(201).json({ success: true, data: user });
+  } catch (error: any) {
+    console.error('Create organizer error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to create organizer' });
+  }
+};
+
+export const updateOrganizer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { fullName, phone, city, avatarUrl, bio } = req.body;
+    
+    // Check if user exists
+    const existing = await prisma.user.findUnique({ where: { id: id as string } });
+    if (!existing) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: id as string },
+      data: {
+        fullName,
+        phone,
+        city,
+        avatarUrl
+      }
+    });
+
+    res.json({ success: true, data: user });
+  } catch (error: any) {
+    console.error('Update organizer error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update organizer' });
+  }
+};
+
