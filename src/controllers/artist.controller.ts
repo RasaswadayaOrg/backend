@@ -404,3 +404,26 @@ export const getUserFollowedArtists = async (req: AuthRequest, res: Response) =>
     data: artists,
   });
 };
+
+// Get current user's artist profile
+export const getMe = async (req: AuthRequest, res: Response) => {
+  // Assuming req.user is set by authenticate middleware
+  if (!req.user || !req.user.id) {
+    throw createError('User not authenticated', 401);
+  }
+  
+  const { data: artist, error } = await supabase
+    .from('Artist')
+    .select('*')
+    .eq('userId', req.user.id)
+    .single();
+
+  if (error || !artist) {
+    // If user is not yet an artist, return empty object or error?
+    // Let's return 404 or empty indicating not an artist yet.
+    // Given this route is likely called by artist dashboard, expecting an artist.
+    return res.status(404).json({ message: 'Artist profile not found for this user.' });
+  }
+
+  res.json(artist);
+};
