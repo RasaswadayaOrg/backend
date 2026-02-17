@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/db';
+import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 // Helper to validate role-specific requirements
@@ -324,6 +325,7 @@ export const getRoleRequestById = async (req: AuthRequest, res: Response) => {
 export const approveRoleRequest = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const { description } = req.body;
     const adminId = req.user?.id;
 
     const request = await prisma.roleRequest.findUnique({
@@ -352,15 +354,77 @@ export const approveRoleRequest = async (req: AuthRequest, res: Response) => {
         status: 'APPROVED',
         reviewedAt: new Date(),
         reviewedBy: adminId,
+        rejectionReason: description || null, // Store approval notes in rejectionReason field
       },
     });
 
     // Update user role if they don't already have it
     if (request.user && request.user.role !== request.requestedRole) {
+      console.log('🔄 Updating user role from', request.user.role, 'to', request.requestedRole);
+      
       await prisma.user.update({
         where: { id: request.userId },
         data: { role: request.requestedRole as any },
       });
+
+      console.log('✅ User role updated successfully');
+
+      // If role is ARTIST, create Artist profile automatically
+      if (request.requestedRole === 'ARTIST') {
+        console.log('🎨 Requested role is ARTIST, checking for existing profile...');
+        
+        // Check if artist profile already exists
+        const { data: existingArtist, error: checkError } = await supabase
+          .from('Artist')
+          .select('id')
+          .eq('userId', request.userId)
+          .single();
+
+        console.log('🔍 Existing artist check:', { 
+          exists: !!existingArtist, 
+          error: checkError?.message 
+        });
+
+        if (!existingArtist) {
+          console.log('📝 Creating new artist profile...');
+          
+          // Create artist profile with data from role request
+          const artistData: any = {
+            id: `art-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            userId: request.userId,
+            name: request.user.fullName || 'Artist',
+            profession: 'Artist', // Default profession
+            genre: 'General', // Default genre
+            bio: request.reason || '',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          // Extract portfolio URL from textFields if available
+          if (request.textFields && typeof request.textFields === 'object') {
+            const textFieldsObj = request.textFields as any;
+            if (textFieldsObj.ARTIST) {
+              artistData.website = textFieldsObj.ARTIST;
+            }
+          }
+
+          console.log('📋 Artist data to insert:', artistData);
+
+          const { data: newArtist, error: createArtistError } = await supabase
+            .from('Artist')
+            .insert(artistData)
+            .select()
+            .single();
+
+          if (createArtistError) {
+            console.error('❌ Failed to create artist profile:', createArtistError);
+          } else {
+            console.log('✅ Artist profile created successfully!', newArtist);
+          }
+        } else {
+          console.log('ℹ️ Artist profile already exists, skipping creation');
+        }
+      }
     }
 
     res.json({
@@ -381,7 +445,7 @@ export const approveRoleRequest = async (req: AuthRequest, res: Response) => {
 export const rejectRoleRequest = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { rejectionReason } = req.body;
+    const { rejectionReason, description } = req.body;
     const adminId = req.user?.id;
 
     if (!rejectionReason || !rejectionReason.trim()) {

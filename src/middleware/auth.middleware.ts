@@ -79,6 +79,8 @@ export const authorize = (...roles: string[]) => {
       return next(createError('Not authenticated', 401));
     }
 
+    console.log('User role:', req.user.role);
+
     if (!roles.includes(req.user.role)) {
       return next(createError('Not authorized for this action', 403));
     }

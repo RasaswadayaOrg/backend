@@ -11,6 +11,7 @@ router.get('/orders', adminController.getOrders);
 
 // Admin users endpoint
 router.get('/users', adminController.getUsers);
+router.get('/users/:userId', adminController.getUserById);
 router.put('/users/:id/role', adminController.updateUserRole);
 router.delete('/users/:id', adminController.deleteUser);
 
@@ -46,6 +47,10 @@ router.delete('/stores/:id', adminController.deleteStore);
 // Admin user endpoints
 router.delete('/users/:id', adminController.deleteUser);
 router.put('/users/:id/role', adminController.updateUserRole);
+
+// Admin organizer endpoints
+router.post('/organizers', adminController.createOrganizer);
+router.put('/organizers/:id', adminController.updateOrganizer);
 
 // Recent activity endpoint
 router.get('/activity', adminController.getRecentActivity);
