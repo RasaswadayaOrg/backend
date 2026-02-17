@@ -195,7 +195,7 @@ export const getAcademyCourses = async (req: AuthRequest, res: Response) => {
 // Add course to academy
 export const addCourse = async (req: AuthRequest, res: Response) => {
   const { id: academyId } = req.params;
-  const { name, description, duration, fee } = req.body;
+  const { name, description, duration } = req.body;
 
   // Check if academy exists
   const { data: academy } = await supabase
@@ -214,7 +214,6 @@ export const addCourse = async (req: AuthRequest, res: Response) => {
       name,
       description: description || null,
       duration: duration || null,
-      fee: fee || null,
       academyId,
     })
     .select('*')
@@ -237,7 +236,7 @@ export const updateCourse = async (req: AuthRequest, res: Response) => {
 
   const updateData: Record<string, any> = {};
 
-  const allowedFields = ['name', 'description', 'duration', 'fee'];
+  const allowedFields = ['name', 'description', 'duration'];
   allowedFields.forEach((field) => {
     if (req.body[field] !== undefined) {
       updateData[field] = req.body[field];

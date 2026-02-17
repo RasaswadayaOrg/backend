@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { body, query } from 'express-validator';
 import * as artistController from '../controllers/artist.controller';
+import * as postController from '../controllers/post.controller';
+import * as fbOAuthController from '../controllers/facebookOAuth.controller';
 import { authenticate, authorize, optionalAuth } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate.middleware';
 
@@ -20,6 +22,9 @@ router.get(
   optionalAuth,
   artistController.getArtists
 );
+
+// Get current user's artist profile
+router.get('/me', authenticate, artistController.getMe);
 
 // Get artist by ID
 router.get('/:id', optionalAuth, artistController.getArtistById);
@@ -68,5 +73,53 @@ router.get('/:id/events', artistController.getArtistEvents);
 
 // Get user's followed artists
 router.get('/user/following', authenticate, artistController.getUserFollowedArtists);
+
+// --- Facebook OAuth Routes ---
+
+// Get Facebook OAuth URL (start the flow)
+router.get('/facebook/auth-url', authenticate, fbOAuthController.getAuthUrl);
+
+// Exchange OAuth code for token + get pages list
+router.post('/facebook/callback', fbOAuthController.handleCallback);
+
+// Save selected page to artist profile
+router.post(
+  '/:artistId/facebook/select-page',
+  authenticate,
+  authorize('ARTIST'),
+  body('pageId').isString().notEmpty(),
+  body('pageAccessToken').isString().notEmpty(),
+  body('pageName').optional().isString(),
+  validateRequest,
+  fbOAuthController.selectPage
+);
+
+// --- Post & Social Integration Routes ---
+
+// Get artist posts
+router.get('/:artistId/posts', postController.getArtistPosts);
+
+// Create manual post (Artist only)
+router.post(
+  '/:artistId/posts',
+  authenticate,
+  authorize('ARTIST'),
+  body('content').optional().isString(),
+  body('imageUrl').optional().isURL(),
+  body('videoUrl').optional().isURL(),
+  validateRequest,
+  postController.createPost
+);
+
+// Connect Facebook Page (Artist only)
+router.post(
+  '/:artistId/connect-facebook',
+  authenticate,
+  authorize('ARTIST'),
+  body('pageId').isString().notEmpty(),
+  body('accessToken').isString().notEmpty(),
+  validateRequest,
+  postController.connectFacebook
+);
 
 export default router;
