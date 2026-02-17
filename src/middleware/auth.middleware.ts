@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../lib/db';
+import { prisma, withRetry } from '../lib/db';
 import { createError } from './error.middleware';
 
 export interface AuthRequest extends Request {
@@ -39,15 +39,17 @@ export const authenticate = async (
     };
 
     // Verify user still exists
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        fullName: true,
-      },
-    });
+    const user = await withRetry(() =>
+      prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          fullName: true,
+        },
+      })
+    );
 
     if (!user) {
       throw createError('User not found', 401);
