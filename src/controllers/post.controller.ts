@@ -1,51 +1,46 @@
-
 import { Request, Response } from 'express';
-import { supabase } from '../lib/supabase';
+import { prisma } from '../lib/db';
 import { createError } from '../middleware/error.middleware';
 import { facebookService } from '../services/facebook.service';
 import { createId } from '@paralleldrive/cuid2';
+import { AuthRequest } from '../middleware/auth.middleware';
 
 export const getArtistPosts = async (req: Request, res: Response) => {
   const artistId = req.params.artistId as string;
 
   // 1. Fetch Artist to check Facebook connection
-  const { data: artist, error: artistError } = await supabase
-    .from('Artist')
-    .select('id, fbPageId, fbAccessToken, fbTokenExpiresAt')
-    .eq('id', artistId)
-    .single();
+  // cast prisma to any to avoid type inference issues with extensions
+  const artist = await (prisma as any).artist.findUnique({
+    where: { id: artistId },
+    select: {
+      id: true,
+      fbPageId: true,
+      fbAccessToken: true,
+      fbTokenExpiresAt: true,
+    },
+  });
 
-  if (artistError || !artist) {
+  if (!artist) {
     throw createError('Artist not found', 404);
   }
 
   // 2. Fetch local posts
-  const { data: posts, error } = await supabase
-    .from('Post')
-    .select('*')
-    .eq('artistId', artistId)
-    .order('publishedAt', { ascending: false });
+  const posts = await (prisma as any).post.findMany({
+    where: { artistId },
+    orderBy: { publishedAt: 'desc' },
+  });
 
-  if (error) {
-    throw createError('Failed to fetch posts', 500);
-  }
-
-  // 3. Trigger async sync if connected (non-blocking) - For MVP maybe sync on demand or periodically.
-  // For simplicity, we trigger sync if no posts found or older than 1 hour. But to keep response fast, we don't await.
-  if (artist.fbPageId && artist.fbAccessToken) {
-    // Fire and forget sync (or could be a background job)
-    // console.log('Triggering Facebook sync for artist:', artistId);
-    // facebookService.service.syncPosts(artist.id, artist.fbAccessToken, artist.fbPageId).catch(console.error);
-    // NOTE: For demo, let's await it if the list is empty to ensure user sees something immediately
+  // 3. Trigger async sync if connected
+  const artistData = artist as any;
+  if (artistData.fbPageId && artistData.fbAccessToken) {
      if (!posts || posts.length === 0) {
         try {
-           await facebookService.syncPosts(artistId, artist.fbAccessToken, artist.fbPageId);
+           await facebookService.syncPosts(artistId, artistData.fbAccessToken, artistData.fbPageId);
            // Re-fetch after sync
-           const { data: newPosts } = await supabase
-            .from('Post')
-            .select('*')
-            .eq('artistId', artistId)
-            .order('publishedAt', { ascending: false });
+           const newPosts = await (prisma as any).post.findMany({
+             where: { artistId },
+             orderBy: { publishedAt: 'desc' },
+           });
            return res.json(newPosts || []);
         } catch (e) {
            console.error("Sync failed", e);
@@ -56,64 +51,251 @@ export const getArtistPosts = async (req: Request, res: Response) => {
   res.json(posts || []);
 };
 
-export const createPost = async (req: Request, res: Response) => {
+export const createPost = async (req: AuthRequest, res: Response) => {
   const artistId = req.params.artistId as string;
-  const { content, imageUrl, videoUrl } = req.body;
+  const { title, content, videoUrl } = req.body;
+  const imageFile = req.file;
 
-  /* 
-  // Authorization check (artistId must match current user's artist profile)
-  // Assuming req.user is populated by auth middleware
-  const userId = req.user.id;
-  const { data: artist } = await supabase.from('Artist').select('id, userId').eq('id', artistId).single();
+  // Authorization check
+  const userId = req.user?.id;
+  if (!userId) {
+    throw createError('Unauthorized', 401);
+  }
+
+  // cast prisma to any to avoid type inference issues with extensions
+  const artist = await (prisma as any).artist.findUnique({
+    where: { id: artistId },
+    select: { userId: true },
+  });
+
   if (!artist || artist.userId !== userId) {
     throw createError('Unauthorized', 403);
   }
-  */
 
-  const { data, error } = await supabase.from('Post').insert({
-    id: createId(),
-    content,
-    imageUrl,
-    videoUrl,
-    source: 'RASASWADAYA',
-    publishedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    artistId,
-  }).select().single();
-
-  if (error) {
-    throw createError('Failed to create post', 500);
+  let imageUrl = null;
+  if (imageFile) {
+      // In production, upload to S3/Cloudinary and get URL
+      // For local dev, construct local path
+      imageUrl = `/uploads/posts/${imageFile.filename}`;
   }
 
-  res.status(201).json(data);
+  const post = await (prisma as any).post.create({
+    data: {
+      title,
+      content,
+      imageUrl,
+      videoUrl,
+      source: 'RASASWADAYA',
+      artistId,
+      publishedAt: new Date(),
+    }
+  });
+
+  res.json({ success: true, data: post });
 };
 
-export const connectFacebook = async (req: Request, res: Response) => {
+export const updatePost = async (req: AuthRequest, res: Response) => {
+  const { postId } = req.params;
+  const { title, content, imageUrl, videoUrl } = req.body;
+  const userId = req.user?.id;
+
+  if (!userId) throw createError('Unauthorized', 401);
+
+  // Check ownership via artist relation
+  // We first fetch the post with artist info
+  const post = await (prisma as any).post.findUnique({
+      where: { id: postId },
+      include: { artist: { select: { userId: true } } }
+  });
+
+  if (!post) throw createError('Post not found', 404);
+  if (post.artist?.userId !== userId && req.user?.role !== 'ADMIN') {
+      throw createError('Unauthorized', 403);
+  }
+
+  const updatedPost = await (prisma as any).post.update({
+      where: { id: postId },
+      data: {
+          title,
+          content,
+          imageUrl,
+          videoUrl,
+          updatedAt: new Date(),
+      }
+  });
+
+  res.json({ success: true, data: updatedPost });
+};
+
+export const getPostById = async (req: Request, res: Response) => {
+  const { postId } = req.params;
+  const post = await (prisma as any).post.findUnique({
+    where: { id: postId },
+    include: { artist: true }
+  });
+
+  if (!post) throw createError('Post not found', 404);
+  res.json(post);
+};
+
+export const deletePost = async (req: AuthRequest, res: Response) => {
+  const { postId } = req.params;
+  const userId = req.user?.id;
+
+  if (!userId) throw createError('Unauthorized', 401);
+
+  const post = await (prisma as any).post.findUnique({
+    where: { id: postId },
+    include: { artist: { select: { userId: true } } }
+  });
+
+  if (!post) throw createError('Post not found', 404);
+  
+  if (post.artist?.userId !== userId && req.user?.role !== 'ADMIN') {
+      throw createError('Unauthorized', 403);
+  }
+
+  await (prisma as any).post.delete({ where: { id: postId } });
+  res.json({ success: true, message: 'Post deleted successfully' });
+};
+
+export const connectFacebook = async (req: AuthRequest, res: Response) => {
   const artistId = req.params.artistId as string;
   const { pageId, accessToken } = req.body;
 
-  // Validate inputs
   if (!pageId || !accessToken) {
     throw createError('Page ID and Access Token are required', 400);
   }
 
-  // Update Artist record
-  const { error } = await supabase
-    .from('Artist')
-    .update({
-      fbPageId: pageId,
-      fbAccessToken: accessToken,
-      fbTokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // Assume 60 days for long-lived token
-      updatedAt: new Date().toISOString(),
-    })
-    .eq('id', artistId);
-
-  if (error) {
-    throw createError('Failed to connect Facebook', 500);
+  const userId = req.user?.id;
+  if (!userId) {
+      throw createError('Unauthorized', 401);
   }
+  
+  const artist = await (prisma as any).artist.findUnique({ where: { id: artistId } });
+  if (!artist || artist.userId !== userId) {
+      throw createError('Unauthorized', 403);
+  }
+
+  await (prisma as any).artist.update({
+      where: { id: artistId },
+      data: {
+          fbPageId: pageId,
+          fbAccessToken: accessToken,
+          fbTokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+      }
+  });
 
   // Initial Sync
   await facebookService.syncPosts(artistId, accessToken, pageId);
 
-  res.json({ message: 'Facebook connected successfully and posts synced.' });
+  res.json({ success: true, message: 'Facebook connected successfully.' });
+};
+
+// New endpoint for connect with User Token (Implicit Flow)
+export const connectFacebookWithUserToken = async (req: AuthRequest, res: Response) => {
+  const artistId = req.params.artistId as string;
+  const { userAccessToken } = req.body;
+
+  if (!userAccessToken) {
+    throw createError('User Access Token is required', 400);
+  }
+
+  const userId = req.user?.id;
+  if (!userId) {
+      throw createError('Unauthorized', 401);
+  }
+  
+  const artist = await prisma.artist.findUnique({ where: { id: artistId } });
+  if (!artist || artist.userId !== userId) {
+      throw createError('Unauthorized', 403);
+  }
+
+  // 1. Get Page ID and Page Access Token from Facebook Graph API
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v19.0/me/accounts?access_token=${userAccessToken}`
+    );
+    
+    if (!response.ok) {
+        const errorData: any = await response.json();
+        throw new Error(errorData.error?.message || 'Failed to fetch Facebook pages');
+    }
+
+    const data: any = await response.json();
+    const pages = data.data;
+
+    if (!pages || pages.length === 0) {
+        throw createError('No Facebook Pages found for this user', 404);
+    }
+
+    // specific logic: select the first page (or could be enhanced to let user select)
+    const page = pages[0];
+    const { id: pageId, access_token: pageAccessToken } = page;
+
+    // 2. Save Page ID and Page Access Token
+    // cast prisma to any 
+    await (prisma as any).artist.update({
+        where: { id: artistId },
+        data: {
+            fbPageId: pageId,
+            fbAccessToken: pageAccessToken,
+            // Long-lived token exchange would be better here, but using what we got for now
+            fbTokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000) 
+        }
+    });
+
+    // 3. Fetch latest 5 posts and save them
+    await facebookService.syncPosts(artistId, pageAccessToken, pageId);
+
+    // 4. Return success
+    res.json({ 
+        success: true, 
+        message: 'Facebook connected and posts synced successfully.',
+        pageName: page.name,
+        pageId: pageId
+    });
+
+  } catch (error: any) {
+    console.error('Facebook connection error:', error);
+    throw createError(error.message || 'Failed to connect Facebook', 500);
+  }
+};
+
+export const syncFacebook = async (req: AuthRequest, res: Response) => {
+  const artistId = req.params.artistId as string;
+  const user = req.user;
+
+  // Verify ownership
+  // cast prisma to any to avoid type inference issues with extensions
+  const artist = await (prisma as any).artist.findFirst({
+    where: {
+      id: artistId,
+      userId: user?.id,
+    },
+    select: {
+      id: true,
+      fbPageId: true,
+      fbAccessToken: true,
+      userId: true
+    }
+  });
+
+  // cast artist to any because TS infers it as null or missing properties due to above issues
+  const artistData = artist as any;
+
+  if (!artistData || (!artistData.fbPageId && user?.role !== 'ADMIN')) {
+    throw createError('Not authorized to sync this artist pages', 403);
+  }
+
+  if (!artistData.fbAccessToken || !artistData.fbPageId) {
+     throw createError('Facebook not connected for this artist', 400);
+  }
+
+  try {
+    const count = await facebookService.syncPosts(artistData.id, artistData.fbAccessToken, artistData.fbPageId);
+    res.json({ success: true, message: `Synced ${count} posts from Facebook` });
+  } catch (error) {
+    throw error;
+  }
 };
