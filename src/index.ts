@@ -21,6 +21,7 @@ import orderRoutes from './routes/order.routes';
 import userRoutes from './routes/user.routes';
 import adminRoutes from './routes/admin.routes';
 import roleRequestRoutes from './routes/roleRequest.routes';
+import songsRoutes from './routes/songs.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -61,6 +62,7 @@ app.use('/api/role-requests', roleRequestRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/songs', songsRoutes);
 
 // 404 handler
 app.use((req, res) => {
