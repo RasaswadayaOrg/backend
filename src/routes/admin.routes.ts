@@ -52,6 +52,12 @@ router.put('/users/:id/role', adminController.updateUserRole);
 router.post('/organizers', adminController.createOrganizer);
 router.put('/organizers/:id', adminController.updateOrganizer);
 
+// Admin post endpoints
+router.get('/posts', adminController.getAllPosts);
+router.get('/posts/:id', adminController.getPostById);
+router.put('/posts/:id', adminController.updatePost);
+router.delete('/posts/:id', adminController.deletePost);
+
 // Recent activity endpoint
 router.get('/activity', adminController.getRecentActivity);
 
