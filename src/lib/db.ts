@@ -6,9 +6,9 @@ const connectionString = process.env.DATABASE_URL;
 
 const pool = new Pool({
   connectionString,
-  max: 20,                     // Maximum number of connections in the pool
+  max: 10,                     // Reduced max connections to be safe with Supabase limits
   idleTimeoutMillis: 30000,    // Close idle connections after 30s
-  connectionTimeoutMillis: 10000, // Fail fast if can't connect in 10s
+  connectionTimeoutMillis: 20000, // Increased timeout to 20s
   keepAlive: true,             // Keep connections alive to avoid reconnect overhead
   keepAliveInitialDelayMillis: 10000,
 });
@@ -27,8 +27,8 @@ const RETRYABLE_CODES = new Set([
   'P2024',  // Prisma: Timed out fetching a new connection
 ]);
 
-const MAX_RETRIES = 2;
-const BASE_DELAY_MS = 500;
+const MAX_RETRIES = 5;
+const BASE_DELAY_MS = 1000;
 
 /**
  * Retry a database operation on transient errors (e.g. ETIMEDOUT).

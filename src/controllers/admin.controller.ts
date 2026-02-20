@@ -1182,3 +1182,213 @@ export const updateOrganizer = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// --- Post Management ---
+
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
+
+export const getAllPosts = async (req: AuthRequest, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+
+    // Get posts with artist info using Prisma
+    const [posts, total] = await Promise.all([
+      (prisma as any).post.findMany({
+        include: {
+          artist: {
+            select: {
+              id: true,
+              name: true,
+              photoUrl: true,
+            },
+          },
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      (prisma as any).post.count(),
+    ]);
+
+    // Transform posts with proper image URLs and counts
+    const postsWithCounts = posts.map((post: any) => ({
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      imageUrl: post.imageUrl?.startsWith('http') 
+        ? post.imageUrl 
+        : post.imageUrl ? `${API_BASE_URL}${post.imageUrl}` : null,
+      videoUrl: post.videoUrl,
+      source: post.source,
+      externalId: post.externalId,
+      publishedAt: post.publishedAt,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+      artistId: post.artistId,
+      artist: post.artist,
+      likesCount: post._count.likes,
+      commentsCount: post._count.comments,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        posts: postsWithCounts,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get all posts error:', error);
+    throw createError('Failed to fetch posts', 500);
+  }
+};
+
+export const getPostById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const post = await (prisma as any).post.findUnique({
+      where: { id },
+      include: {
+        artist: {
+          select: {
+            id: true,
+            name: true,
+            photoUrl: true,
+          },
+        },
+        _count: {
+          select: {
+            likes: true,
+            comments: true,
+          },
+        },
+        comments: {
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            userId: true,
+          },
+        },
+      },
+    });
+
+    if (!post) {
+      throw createError('Post not found', 404);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: post.id,
+        title: post.title,
+        content: post.content,
+        imageUrl: post.imageUrl?.startsWith('http') 
+          ? post.imageUrl 
+          : post.imageUrl ? `${API_BASE_URL}${post.imageUrl}` : null,
+        videoUrl: post.videoUrl,
+        source: post.source,
+        externalId: post.externalId,
+        publishedAt: post.publishedAt,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+        artistId: post.artistId,
+        artist: post.artist,
+        likesCount: post._count.likes,
+        commentsCount: post._count.comments,
+        recentComments: post.comments,
+      }
+    });
+  } catch (error) {
+    console.error('Get post by ID error:', error);
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    throw createError('Failed to fetch post', 500);
+  }
+};
+
+export const updatePost = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { title, content, imageUrl, videoUrl } = req.body;
+
+    // Check if post exists
+    const existingPost = await (prisma as any).post.findUnique({
+      where: { id },
+    });
+
+    if (!existingPost) {
+      throw createError('Post not found', 404);
+    }
+
+    const updatedPost = await (prisma as any).post.update({
+      where: { id },
+      data: {
+        title,
+        content,
+        imageUrl,
+        videoUrl,
+      },
+    });
+
+    res.json({
+      success: true,
+      data: updatedPost,
+      message: 'Post updated successfully'
+    });
+  } catch (error) {
+    console.error('Update post error:', error);
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    throw createError('Failed to update post', 500);
+  }
+};
+
+export const deletePost = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if post exists
+    const existingPost = await (prisma as any).post.findUnique({
+      where: { id },
+    });
+
+    if (!existingPost) {
+      throw createError('Post not found', 404);
+    }
+
+    // Delete the post (cascade will handle likes and comments)
+    await (prisma as any).post.delete({
+      where: { id },
+    });
+
+    res.json({
+      success: true,
+      message: 'Post deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete post error:', error);
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    throw createError('Failed to delete post', 500);
+  }
+};
+

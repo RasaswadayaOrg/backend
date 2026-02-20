@@ -99,16 +99,57 @@ router.post(
 // Get artist posts
 router.get('/:artistId/posts', postController.getArtistPosts);
 
+import { uploadPostImage } from '../middleware/upload.middleware';
+
+// ...existing code...
 // Create manual post (Artist only)
 router.post(
   '/:artistId/posts',
   authenticate,
   authorize('ARTIST'),
-  body('content').optional().isString(),
-  body('imageUrl').optional().isURL(),
-  body('videoUrl').optional().isURL(),
+  uploadPostImage.single('image'),
+  [
+    body('title').optional().isString().withMessage('Title must be a string'),
+    body('content').notEmpty().withMessage('Content (description) is required'),
+    body('videoUrl')
+      .optional()
+      .custom((value) => {
+        if (value && !value.match(/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/)) {
+          throw new Error('Video URL must be a valid YouTube link');
+        }
+        return true;
+      }),
+  ],
   validateRequest,
   postController.createPost
+);
+
+// Update manual post (Artist only)
+router.put(
+  '/:artistId/posts/:postId',
+  authenticate,
+  authorize('ARTIST'),
+  [
+    body('title').optional().isString(),
+    body('content').optional().isString(),
+    body('videoUrl').optional().isURL(),
+  ],
+  validateRequest,
+  postController.updatePost
+);
+
+// Delete manual post (Artist only or Admin)
+router.delete(
+  '/:artistId/posts/:postId',
+  authenticate,
+  authorize('ARTIST', 'ADMIN'),
+  postController.deletePost
+);
+
+// Get single post
+router.get(
+  '/:artistId/posts/:postId',
+  postController.getPostById
 );
 
 // Connect Facebook Page (Artist only)
@@ -120,6 +161,25 @@ router.post(
   body('accessToken').isString().notEmpty(),
   validateRequest,
   postController.connectFacebook
+);
+
+// Connect Facebook with User Access Token (Implicit Flow)
+router.post(
+  '/:artistId/connect-facebook-implicit',
+  authenticate,
+  authorize('ARTIST'),
+  body('userAccessToken').isString().notEmpty(),
+  validateRequest,
+  postController.connectFacebookWithUserToken
+);
+
+// Sync Facebook Posts
+router.post(
+  '/:artistId/sync-facebook',
+  authenticate,
+  authorize('ARTIST'),
+  validateRequest,
+  postController.syncFacebook
 );
 
 export default router;

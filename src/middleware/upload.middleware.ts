@@ -48,3 +48,32 @@ export const uploadMultipleRoleDocuments = uploadRoleDocuments.fields([
   { name: 'document_SELLER', maxCount: 1 },
   { name: 'document_TEACHER', maxCount: 1 },
 ]);
+
+// Ensure post uploads directory exists
+const postUploadDir = path.join(__dirname, '../../uploads/posts');
+if (!fs.existsSync(postUploadDir)) {
+  fs.mkdirSync(postUploadDir, { recursive: true });
+}
+
+const postStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, postUploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const sanitizedOriginalName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        cb(null, `${uniqueSuffix}-${sanitizedOriginalName}`);
+    }
+});
+
+export const uploadPostImage = multer({
+    storage: postStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed!'));
+        }
+    }
+});
