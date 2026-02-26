@@ -3,6 +3,7 @@ import { body, query } from 'express-validator';
 import * as eventController from '../controllers/event.controller';
 import { authenticate, authorize, optionalAuth } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate.middleware';
+import { uploadEventImage } from '../middleware/upload.middleware';
 
 const router = Router();
 
@@ -30,8 +31,33 @@ router.get('/featured', eventController.getFeaturedEvents);
 // Get upcoming events
 router.get('/upcoming', eventController.getUpcomingEvents);
 
+// Get organizer's own events (must be BEFORE /:id to avoid route conflict)
+router.get(
+  '/organizer/me',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+  ],
+  validateRequest,
+  eventController.getOrganizerEvents
+);
+
+// Get user's interested events (must be BEFORE /:id to avoid route conflict)
+router.get('/user/interested', authenticate, eventController.getUserInterestedEvents);
+
 // Get event by ID
 router.get('/:id', optionalAuth, eventController.getEventById);
+
+// Upload event image (organizers and admins only)
+router.post(
+  '/upload-image',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  uploadEventImage.single('image'),
+  eventController.uploadImage
+);
 
 // Create event (organizers and admins only)
 router.post(
@@ -47,6 +73,9 @@ router.post(
     body('city').notEmpty().withMessage('City is required'),
     body('category').notEmpty().withMessage('Category is required'),
     body('capacity').optional().isInt({ min: 1 }),
+    body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
+    body('artistIds').optional().isArray().withMessage('artistIds must be an array'),
+    body('artistIds.*').optional().isString().withMessage('Each artistId must be a string'),
   ],
   validateRequest,
   eventController.createEvent
@@ -61,6 +90,8 @@ router.put(
     body('title').optional().notEmpty(),
     body('description').optional().notEmpty(),
     body('eventDate').optional().isISO8601(),
+    body('price').optional().isFloat({ min: 0 }),
+    body('capacity').optional().isInt({ min: 1 }),
   ],
   validateRequest,
   eventController.updateEvent
@@ -79,8 +110,5 @@ router.post('/:id/interest', authenticate, eventController.expressInterest);
 
 // Remove interest from event
 router.delete('/:id/interest', authenticate, eventController.removeInterest);
-
-// Get user's interested events
-router.get('/user/interested', authenticate, eventController.getUserInterestedEvents);
 
 export default router;

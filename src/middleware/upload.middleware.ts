@@ -77,3 +77,32 @@ export const uploadPostImage = multer({
         }
     }
 });
+
+// Ensure event uploads directory exists
+const eventUploadDir = path.join(__dirname, '../../uploads/events');
+if (!fs.existsSync(eventUploadDir)) {
+  fs.mkdirSync(eventUploadDir, { recursive: true });
+}
+
+const eventStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, eventUploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const sanitizedOriginalName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    cb(null, `${uniqueSuffix}-${sanitizedOriginalName}`);
+  }
+});
+
+export const uploadEventImage = multer({
+  storage: eventStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for event posters
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed for event posters!'));
+    }
+  }
+});
