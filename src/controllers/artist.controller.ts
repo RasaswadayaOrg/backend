@@ -293,11 +293,13 @@ export const followArtist = async (req: AuthRequest, res: Response) => {
   }
 
   const { error } = await supabase.from('Follower').insert({
+    id: createId(),
     userId,
     artistId,
   });
 
   if (error) {
+    console.error('Supabase follow error:', error);
     throw createError('Failed to follow artist', 500);
   }
 
@@ -337,7 +339,7 @@ export const getArtistFollowers = async (req: AuthRequest, res: Response) => {
     .select(`
       id,
       createdAt,
-      user:User(id, fullName)
+      user:User(id, fullName, avatarUrl)
     `, { count: 'exact' })
     .eq('artistId', artistId);
 
