@@ -1,15 +1,19 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/db';
 import { createError } from '../middleware/error.middleware';
-import { facebookService } from '../services/facebook.service';
+import { facebookService, FB_GRAPH_API } from '../services/facebook.service';
 import { createId } from '@paralleldrive/cuid2';
 import { AuthRequest } from '../middleware/auth.middleware';
+
+// Minimum interval between auto-syncs (1 hour in milliseconds)
+const SYNC_COOLDOWN_MS = 60 * 60 * 1000;
+// In-memory tracker for last sync time per artist (simple approach for single-instance)
+const lastSyncMap = new Map<string, number>();
 
 export const getArtistPosts = async (req: Request, res: Response) => {
   const artistId = req.params.artistId as string;
 
   // 1. Fetch Artist to check Facebook connection
-  // cast prisma to any to avoid type inference issues with extensions
   const artist = await (prisma as any).artist.findUnique({
     where: { id: artistId },
     select: {
@@ -17,6 +21,7 @@ export const getArtistPosts = async (req: Request, res: Response) => {
       fbPageId: true,
       fbAccessToken: true,
       fbTokenExpiresAt: true,
+      fbSourceType: true,
     },
   });
 
@@ -30,22 +35,30 @@ export const getArtistPosts = async (req: Request, res: Response) => {
     orderBy: { publishedAt: 'desc' },
   });
 
-  // 3. Trigger async sync if connected
+  // 3. Trigger background sync if Facebook is connected, token is valid, and cooldown has passed
   const artistData = artist as any;
   if (artistData.fbPageId && artistData.fbAccessToken) {
-     if (!posts || posts.length === 0) {
-        try {
-           await facebookService.syncPosts(artistId, artistData.fbAccessToken, artistData.fbPageId);
-           // Re-fetch after sync
-           const newPosts = await (prisma as any).post.findMany({
-             where: { artistId },
-             orderBy: { publishedAt: 'desc' },
-           });
-           return res.json(newPosts || []);
-        } catch (e) {
-           console.error("Sync failed", e);
+    const tokenExpired = facebookService.isTokenExpired(artistData.fbTokenExpiresAt);
+    const lastSync = lastSyncMap.get(artistId) || 0;
+    const cooldownPassed = Date.now() - lastSync > SYNC_COOLDOWN_MS;
+
+    if (!tokenExpired && cooldownPassed) {
+      lastSyncMap.set(artistId, Date.now());
+      try {
+        const sourceType = artistData.fbSourceType === 'profile' ? 'profile' : 'page';
+        const synced = await facebookService.syncPosts(artistId, artistData.fbAccessToken, artistData.fbPageId, sourceType as 'page' | 'profile');
+        if (synced > 0) {
+          // Re-fetch after sync if new posts were added
+          const updatedPosts = await (prisma as any).post.findMany({
+            where: { artistId },
+            orderBy: { publishedAt: 'desc' },
+          });
+          return res.json(updatedPosts || []);
         }
-     }
+      } catch (e) {
+        console.error('Background sync failed:', e);
+      }
+    }
   }
 
   res.json(posts || []);
@@ -159,40 +172,7 @@ export const deletePost = async (req: AuthRequest, res: Response) => {
   res.json({ success: true, message: 'Post deleted successfully' });
 };
 
-export const connectFacebook = async (req: AuthRequest, res: Response) => {
-  const artistId = req.params.artistId as string;
-  const { pageId, accessToken } = req.body;
-
-  if (!pageId || !accessToken) {
-    throw createError('Page ID and Access Token are required', 400);
-  }
-
-  const userId = req.user?.id;
-  if (!userId) {
-      throw createError('Unauthorized', 401);
-  }
-  
-  const artist = await (prisma as any).artist.findUnique({ where: { id: artistId } });
-  if (!artist || artist.userId !== userId) {
-      throw createError('Unauthorized', 403);
-  }
-
-  await (prisma as any).artist.update({
-      where: { id: artistId },
-      data: {
-          fbPageId: pageId,
-          fbAccessToken: accessToken,
-          fbTokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
-      }
-  });
-
-  // Initial Sync
-  await facebookService.syncPosts(artistId, accessToken, pageId);
-
-  res.json({ success: true, message: 'Facebook connected successfully.' });
-};
-
-// New endpoint for connect with User Token (Implicit Flow)
+// Connect Facebook with User Access Token (Implicit Flow)
 export const connectFacebookWithUserToken = async (req: AuthRequest, res: Response) => {
   const artistId = req.params.artistId as string;
   const { userAccessToken } = req.body;
@@ -214,50 +194,73 @@ export const connectFacebookWithUserToken = async (req: AuthRequest, res: Respon
   // 1. Get Page ID and Page Access Token from Facebook Graph API
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v19.0/me/accounts?access_token=${userAccessToken}`
+      `${FB_GRAPH_API}/me/accounts?access_token=${userAccessToken}`
     );
     
     if (!response.ok) {
         const errorData: any = await response.json();
-        throw new Error(errorData.error?.message || 'Failed to fetch Facebook pages');
+        throw createError(errorData.error?.message || 'Failed to fetch Facebook pages', 400);
     }
 
     const data: any = await response.json();
     const pages = data.data;
 
-    if (!pages || pages.length === 0) {
-        throw createError('No Facebook Pages found for this user', 404);
+    let pageId: string;
+    let pageAccessToken: string;
+    let pageName: string | undefined;
+    let syncSource: 'page' | 'profile' = 'page';
+
+    if (pages && pages.length > 0) {
+      // Use the first managed Page
+      const page = pages[0];
+      pageId = page.id;
+      pageAccessToken = page.access_token;
+      pageName = page.name;
+    } else {
+      // No Pages found — fall back to user's own profile feed
+      // Fetch user's profile ID
+      const meRes = await fetch(`${FB_GRAPH_API}/me?fields=id,name&access_token=${userAccessToken}`);
+      if (!meRes.ok) {
+        throw createError('Failed to fetch Facebook profile. Please try again.', 400);
+      }
+      const meData: any = await meRes.json();
+      pageId = meData.id;
+      pageAccessToken = userAccessToken; // Use the user token directly for profile feed
+      pageName = meData.name;
+      syncSource = 'profile';
     }
 
-    // specific logic: select the first page (or could be enhanced to let user select)
-    const page = pages[0];
-    const { id: pageId, access_token: pageAccessToken } = page;
-
-    // 2. Save Page ID and Page Access Token
-    // cast prisma to any 
+    // 2. Save Page/Profile ID and Access Token
     await (prisma as any).artist.update({
         where: { id: artistId },
         data: {
             fbPageId: pageId,
             fbAccessToken: pageAccessToken,
-            // Long-lived token exchange would be better here, but using what we got for now
-            fbTokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000) 
+            fbTokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+            fbSourceType: syncSource, // 'page' or 'profile'
         }
     });
 
-    // 3. Fetch latest 5 posts and save them
-    await facebookService.syncPosts(artistId, pageAccessToken, pageId);
+    // 3. Sync posts from the page or profile feed
+    await facebookService.syncPosts(artistId, pageAccessToken, pageId, syncSource);
 
     // 4. Return success
     res.json({ 
         success: true, 
-        message: 'Facebook connected and posts synced successfully.',
-        pageName: page.name,
-        pageId: pageId
+        message: syncSource === 'page'
+          ? `Facebook page "${pageName}" connected and posts synced successfully.`
+          : `Facebook profile "${pageName}" connected and posts synced successfully. (No Pages found — using profile feed)`,
+        pageName: pageName,
+        pageId: pageId,
+        source: syncSource,
     });
 
   } catch (error: any) {
     console.error('Facebook connection error:', error);
+    // Preserve original status code if it's an ApiError
+    if (error.statusCode) {
+      throw error;
+    }
     throw createError(error.message || 'Failed to connect Facebook', 500);
   }
 };
@@ -277,6 +280,8 @@ export const syncFacebook = async (req: AuthRequest, res: Response) => {
       id: true,
       fbPageId: true,
       fbAccessToken: true,
+      fbTokenExpiresAt: true,
+      fbSourceType: true,
       userId: true
     }
   });
@@ -292,8 +297,14 @@ export const syncFacebook = async (req: AuthRequest, res: Response) => {
      throw createError('Facebook not connected for this artist', 400);
   }
 
+  // Check if token has expired
+  if (facebookService.isTokenExpired(artistData.fbTokenExpiresAt)) {
+    throw createError('Facebook token has expired. Please reconnect your Facebook page.', 401);
+  }
+
   try {
-    const count = await facebookService.syncPosts(artistData.id, artistData.fbAccessToken, artistData.fbPageId);
+    const sourceType = artistData.fbSourceType === 'profile' ? 'profile' : 'page';
+    const count = await facebookService.syncPosts(artistData.id, artistData.fbAccessToken, artistData.fbPageId, sourceType as 'page' | 'profile');
     res.json({ success: true, message: `Synced ${count} posts from Facebook` });
   } catch (error) {
     throw error;

@@ -108,6 +108,7 @@ model Artist {
   fbPageId        String?
   fbAccessToken   String?
   fbTokenExpiresAt DateTime?
+  fbSourceType    String?   // 'page' or 'profile' — determines feed endpoint
 
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -332,6 +333,9 @@ model Post {
   artist      Artist      @relation(fields: [artistId], references: [id])
   likes       PostLike[]
   comments    PostComment[]
+
+  @@index([externalId])
+  @@index([artistId])
 }
 
 model PostLike {
