@@ -80,7 +80,7 @@ router.get('/user/following', authenticate, artistController.getUserFollowedArti
 router.get('/facebook/auth-url', authenticate, fbOAuthController.getAuthUrl);
 
 // Exchange OAuth code for token + get pages list
-router.post('/facebook/callback', fbOAuthController.handleCallback);
+router.post('/facebook/callback', authenticate, fbOAuthController.handleCallback);
 
 // Save selected page to artist profile
 router.post(
@@ -152,20 +152,9 @@ router.get(
   postController.getPostById
 );
 
-// Connect Facebook Page (Artist only)
-router.post(
-  '/:artistId/connect-facebook',
-  authenticate,
-  authorize('ARTIST'),
-  body('pageId').isString().notEmpty(),
-  body('accessToken').isString().notEmpty(),
-  validateRequest,
-  postController.connectFacebook
-);
-
 // Connect Facebook with User Access Token (Implicit Flow)
 router.post(
-  '/:artistId/connect-facebook-implicit',
+  '/:artistId/connect-facebook',
   authenticate,
   authorize('ARTIST'),
   body('userAccessToken').isString().notEmpty(),

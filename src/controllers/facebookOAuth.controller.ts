@@ -3,11 +3,11 @@ import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
 import { createId } from '@paralleldrive/cuid2';
+import { FB_GRAPH_API, FB_GRAPH_API_VERSION } from '../services/facebook.service';
 
 const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID;
 const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
 const FACEBOOK_REDIRECT_URI = process.env.FACEBOOK_REDIRECT_URI || 'http://localhost:3000/auth/facebook/callback';
-const GRAPH_API = 'https://graph.facebook.com/v22.0';
 
 // Step 1: Generate the Facebook OAuth URL
 export const getAuthUrl = async (req: AuthRequest, res: Response) => {
@@ -15,9 +15,9 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
     throw createError('Facebook App ID not configured', 500);
   }
 
-  const scopes = ['public_profile', 'pages_show_list', 'pages_read_engagement'].join(',');
+  const scopes = ['public_profile', 'pages_show_list', 'pages_read_engagement', 'user_posts'].join(',');
 
-  const authUrl = `https://www.facebook.com/v22.0/dialog/oauth?` +
+  const authUrl = `https://www.facebook.com/${FB_GRAPH_API_VERSION}/dialog/oauth?` +
     `client_id=${FACEBOOK_APP_ID}` +
     `&redirect_uri=${encodeURIComponent(FACEBOOK_REDIRECT_URI)}` +
     `&scope=${scopes}` +
@@ -40,7 +40,7 @@ export const handleCallback = async (req: Request, res: Response) => {
   }
 
   // Exchange code for short-lived user token
-  const tokenUrl = `${GRAPH_API}/oauth/access_token?` +
+  const tokenUrl = `${FB_GRAPH_API}/oauth/access_token?` +
     `client_id=${FACEBOOK_APP_ID}` +
     `&client_secret=${FACEBOOK_APP_SECRET}` +
     `&redirect_uri=${encodeURIComponent(FACEBOOK_REDIRECT_URI)}` +
@@ -55,7 +55,7 @@ export const handleCallback = async (req: Request, res: Response) => {
   }
 
   // Exchange for a long-lived token (60 days)
-  const longLivedUrl = `${GRAPH_API}/oauth/access_token?` +
+  const longLivedUrl = `${FB_GRAPH_API}/oauth/access_token?` +
     `grant_type=fb_exchange_token` +
     `&client_id=${FACEBOOK_APP_ID}` +
     `&client_secret=${FACEBOOK_APP_SECRET}` +
@@ -68,7 +68,7 @@ export const handleCallback = async (req: Request, res: Response) => {
   const expiresIn = longLivedData.expires_in || 5184000; // default 60 days
 
   // Get user's managed pages
-  const pagesRes = await fetch(`${GRAPH_API}/me/accounts?access_token=${userAccessToken}`);
+  const pagesRes = await fetch(`${FB_GRAPH_API}/me/accounts?access_token=${userAccessToken}`);
   const pagesData: any = await pagesRes.json();
 
   if (pagesData.error) {
