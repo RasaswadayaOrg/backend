@@ -3,6 +3,7 @@ import { body, query } from 'express-validator';
 import * as artistController from '../controllers/artist.controller';
 import * as postController from '../controllers/post.controller';
 import * as fbOAuthController from '../controllers/facebookOAuth.controller';
+import * as calendarController from '../controllers/calendar.controller';
 import { authenticate, authorize, optionalAuth } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate.middleware';
 
@@ -73,6 +74,55 @@ router.get('/:id/events', artistController.getArtistEvents);
 
 // Get user's followed artists
 router.get('/user/following', authenticate, artistController.getUserFollowedArtists);
+
+// --- Calendar Event Routes ---
+
+// Get artist's calendar events (public — organizers can view)
+router.get('/:artistId/calendar', calendarController.getCalendarEvents);
+
+// Create calendar event (Artist only)
+router.post(
+  '/:artistId/calendar',
+  authenticate,
+  authorize('ARTIST'),
+  [
+    body('title').notEmpty().withMessage('Title is required'),
+    body('eventDate').notEmpty().withMessage('Event date is required'),
+    body('startTime').optional().isString(),
+    body('endTime').optional().isString(),
+    body('location').optional().isString(),
+    body('description').optional().isString(),
+    body('type').optional().isIn(['gig', 'private', 'recording', 'rehearsal', 'other']),
+  ],
+  validateRequest,
+  calendarController.createCalendarEvent
+);
+
+// Update calendar event (Artist only)
+router.put(
+  '/:artistId/calendar/:eventId',
+  authenticate,
+  authorize('ARTIST'),
+  [
+    body('title').optional().notEmpty(),
+    body('eventDate').optional().notEmpty(),
+    body('startTime').optional().isString(),
+    body('endTime').optional().isString(),
+    body('location').optional().isString(),
+    body('description').optional().isString(),
+    body('type').optional().isIn(['gig', 'private', 'recording', 'rehearsal', 'other']),
+  ],
+  validateRequest,
+  calendarController.updateCalendarEvent
+);
+
+// Delete calendar event (Artist only)
+router.delete(
+  '/:artistId/calendar/:eventId',
+  authenticate,
+  authorize('ARTIST'),
+  calendarController.deleteCalendarEvent
+);
 
 // --- Facebook OAuth Routes ---
 

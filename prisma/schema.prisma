@@ -117,6 +117,25 @@ model Artist {
   followers    Follower[]
   performances Performance[]
   posts        Post[]
+  calendarEvents ArtistEvent[]
+}
+
+model ArtistEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  eventDate   DateTime
+  startTime   String?  // e.g. "19:00"
+  endTime     String?  // e.g. "21:00"
+  location    String?
+  type        String   @default("gig") // gig, private, recording, rehearsal, other
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  artistId    String
+  artist      Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@index([artistId])
+  @@index([eventDate])
 }
 
 model Follower {
