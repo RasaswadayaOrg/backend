@@ -27,6 +27,22 @@ router.get(
 // Get current user's artist profile
 router.get('/me', authenticate, artistController.getMe);
 
+// Talent Hunt — get artists with availability info (for organizers)
+router.get(
+  '/talent-hunt',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  [
+    query('profession').optional().isString(),
+    query('search').optional().isString(),
+    query('date').optional().isDate().withMessage('Date must be in YYYY-MM-DD format'),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 50 }),
+  ],
+  validateRequest,
+  artistController.getTalentHuntArtists
+);
+
 // Get artist by ID
 router.get('/:id', optionalAuth, artistController.getArtistById);
 
