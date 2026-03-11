@@ -23,6 +23,7 @@ model User {
   cartItems        CartItem[]
   enquiries        Enquiry[]
   organizedEvents  Event[]           @relation("OrganizerEvents")
+  calendarEvents   OrganizerEvent[]
   follows          Follower[]
   interests        Interest[]
   orders           Order[]
@@ -135,6 +136,25 @@ model ArtistEvent {
   artist      Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
 
   @@index([artistId])
+  @@index([eventDate])
+}
+
+model OrganizerEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  eventDate   DateTime
+  startTime   String?  // e.g. "19:00"
+  endTime     String?  // e.g. "21:00"
+  location    String?
+  type        String   @default("cultural_show") // cultural_show, workshop, meeting, rehearsal, site_visit, other
+  artistCount Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  organizerId String
+  organizer   User     @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
   @@index([eventDate])
 }
 
