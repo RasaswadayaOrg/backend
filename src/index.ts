@@ -22,6 +22,8 @@ import userRoutes from './routes/user.routes';
 import adminRoutes from './routes/admin.routes';
 import roleRequestRoutes from './routes/roleRequest.routes';
 import songsRoutes from './routes/songs.routes';
+import recommendationRoutes from './routes/recommendation.routes';
+import bookingRoutes from './routes/booking.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -57,12 +59,13 @@ app.use('/api/academies', academyRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api/role-requests', roleRequestRoutes);
-
-app.use('/api/orders', orderRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/songs', songsRoutes);
+app.use('/api/v1/orders', orderRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/role-requests', roleRequestRoutes);
+app.use('/api/v1/songs', songsRoutes);
+app.use('/api/v1/recommendations', recommendationRoutes);
+app.use('/api/v1/booking-requests', bookingRoutes);
 
 // 404 handler
 app.use((req, res) => {

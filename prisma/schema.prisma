@@ -7,31 +7,33 @@ datasource db {
 }
 
 model User {
-  id               String            @id @default(cuid())
-  email            String            @unique
-  password         String
-  fullName         String
-  firstName        String?
-  lastName         String?
-  phone            String?
-  city             String?
-  avatarUrl        String?
-  role             UserRole          @default(USER)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  artist           Artist?
-  cartItems        CartItem[]
-  enquiries        Enquiry[]
-  organizedEvents  Event[]           @relation("OrganizerEvents")
-  calendarEvents   OrganizerEvent[]
-  follows          Follower[]
-  interests        Interest[]
-  orders           Order[]
-  reminders        Reminder[]
-  RoleRequest      RoleRequest[]
-  store            Store?
-  tickets          Ticket[]
-  preferences      UserPreference?
+  id              String           @id @default(cuid())
+  email           String           @unique
+  password        String
+  fullName        String
+  firstName       String?
+  lastName        String?
+  phone           String?
+  city            String?
+  avatarUrl       String?
+  role            UserRole         @default(USER)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  artist          Artist?
+  cartItems       CartItem[]
+  enquiries       Enquiry[]
+  organizedEvents Event[]          @relation("OrganizerEvents")
+  calendarEvents  OrganizerEvent[]
+  follows         Follower[]
+  interests       Interest[]
+  orders          Order[]
+  reminders       Reminder[]
+  recommendations Recommendation[]
+  RoleRequest     RoleRequest[]
+  store           Store?
+  tickets         Ticket[]
+  bookingRequests BookingRequest[]
+  preferences     UserPreference?
 }
 
 model UserPreference {
@@ -93,32 +95,33 @@ model Interest {
 }
 
 model Artist {
-  id           String        @id @default(cuid())
-  name         String
-  profession   String
-  genre        String
-  bio          String?
-  photoUrl     String?
-  coverUrl     String?
-  location     String?
-  website      String?
-  instagram    String?
-  facebook     String?
-  
-  // Social Integration
-  fbPageId        String?
-  fbAccessToken   String?
-  fbTokenExpiresAt DateTime?
-  fbSourceType    String?   // 'page' or 'profile' — determines feed endpoint
+  id         String  @id @default(cuid())
+  name       String
+  profession String
+  genre      String
+  bio        String?
+  photoUrl   String?
+  coverUrl   String?
+  location   String?
+  website    String?
+  instagram  String?
+  facebook   String?
 
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  userId       String?       @unique
-  user         User?         @relation(fields: [userId], references: [id])
-  followers    Follower[]
-  performances Performance[]
-  posts        Post[]
-  calendarEvents ArtistEvent[]
+  // Social Integration
+  fbPageId         String?
+  fbAccessToken    String?
+  fbTokenExpiresAt DateTime?
+  fbSourceType     String? // 'page' or 'profile' — determines feed endpoint
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  userId          String?          @unique
+  user            User?            @relation(fields: [userId], references: [id])
+  followers       Follower[]
+  performances    Performance[]
+  bookingRequests BookingRequest[]
+  posts           Post[]
+  calendarEvents  ArtistEvent[]
 }
 
 model ArtistEvent {
@@ -126,8 +129,8 @@ model ArtistEvent {
   title       String
   description String?
   eventDate   DateTime
-  startTime   String?  // e.g. "19:00"
-  endTime     String?  // e.g. "21:00"
+  startTime   String? // e.g. "19:00"
+  endTime     String? // e.g. "21:00"
   location    String?
   type        String   @default("gig") // gig, private, recording, rehearsal, other
   createdAt   DateTime @default(now())
@@ -144,8 +147,8 @@ model OrganizerEvent {
   title       String
   description String?
   eventDate   DateTime
-  startTime   String?  // e.g. "19:00"
-  endTime     String?  // e.g. "21:00"
+  startTime   String? // e.g. "19:00"
+  endTime     String? // e.g. "21:00"
   location    String?
   type        String   @default("cultural_show") // cultural_show, workshop, meeting, rehearsal, site_visit, other
   artistCount Int?
@@ -300,6 +303,21 @@ model Reminder {
   user      User     @relation(fields: [userId], references: [id])
 }
 
+model Recommendation {
+  id              String   @id @default(cuid())
+  userId          String
+  recommendedType String // "ARTIST" or "EVENT"
+  recommendedId   String // The ID of the artist or event
+  score           Float // AI confidence score (e.g. 0.85)
+  reason          String? // Short reason (e.g. "Because you like contemporary music")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([recommendedType])
+}
+
 model RoleRequest {
   id              String        @id @default(cuid())
   userId          String
@@ -358,18 +376,18 @@ enum RequestStatus {
 }
 
 model Post {
-  id          String      @id @default(cuid())
+  id          String        @id @default(cuid())
   title       String?
   content     String?
   imageUrl    String?
   videoUrl    String?
-  source      PostSource  @default(RASASWADAYA)
-  externalId  String?     // ID from Facebook/Instagram
-  publishedAt DateTime    @default(now())
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  source      PostSource    @default(RASASWADAYA)
+  externalId  String? // ID from Facebook/Instagram
+  publishedAt DateTime      @default(now())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   artistId    String
-  artist      Artist      @relation(fields: [artistId], references: [id])
+  artist      Artist        @relation(fields: [artistId], references: [id])
   likes       PostLike[]
   comments    PostComment[]
 
@@ -404,4 +422,29 @@ enum PostSource {
   RASASWADAYA
   FACEBOOK
   INSTAGRAM
+}
+
+model BookingRequest {
+  id          String        @id @default(cuid())
+  eventName   String
+  date        DateTime
+  time        String
+  venue       String
+  description String?
+  status      BookingStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  organizerId String
+  artistId    String
+  organizer   User          @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  artist      Artist        @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
+  @@index([artistId])
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
 }
