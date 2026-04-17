@@ -4,6 +4,121 @@ import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
 
+/**
+ * GET /api/artists/talent-hunt
+ * Returns artists with their busy dates (from ArtistEvent) for a given date range.
+ * Supports filtering by profession, search, and date (shows only free artists on that date).
+ */
+export const getTalentHuntArtists = async (req: AuthRequest, res: Response) => {
+  const {
+    profession,
+    search,
+    date,         // ISO date string — filter artists FREE on this date
+    page = 1,
+    limit = 50,
+  } = req.query;
+
+  const offset = (Number(page) - 1) * Number(limit);
+
+  // 1. Fetch artists
+  let query = supabase
+    .from('Artist')
+    .select('id, name, profession, genre, bio, photoUrl, location', { count: 'exact' });
+
+  if (profession) {
+    query = query.eq('profession', profession);
+  }
+
+  if (search) {
+    query = query.or(`name.ilike.%${search}%,bio.ilike.%${search}%,profession.ilike.%${search}%`);
+  }
+
+  query = query.order('name', { ascending: true });
+  query = query.range(offset, offset + Number(limit) - 1);
+
+  const { data: artists, error, count } = await query;
+
+  if (error) {
+    throw createError('Failed to fetch artists', 500);
+  }
+
+  if (!artists || artists.length === 0) {
+    return res.json({
+      success: true,
+      data: [],
+      pagination: { page: Number(page), limit: Number(limit), total: 0, totalPages: 0 },
+    });
+  }
+
+  const artistIds = artists.map((a) => a.id);
+
+  // 2. Fetch ArtistEvent records for these artists in the next 8 days (for Quick Date Pick)
+  // Use local date strings (yyyy-mm-dd) to avoid timezone shift issues
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const endDay = new Date(today);
+  endDay.setDate(endDay.getDate() + 8);
+  const endStr = `${endDay.getFullYear()}-${String(endDay.getMonth() + 1).padStart(2, '0')}-${String(endDay.getDate()).padStart(2, '0')}`;
+
+  const { data: busyEvents } = await supabase
+    .from('ArtistEvent')
+    .select('artistId, eventDate')
+    .in('artistId', artistIds)
+    .gte('eventDate', `${todayStr}T00:00:00`)
+    .lte('eventDate', `${endStr}T23:59:59`);
+
+  // Build a map: artistId → Set of busy date strings (yyyy-mm-dd)
+  const busyMap = new Map<string, Set<string>>();
+  (busyEvents || []).forEach((evt) => {
+    // Extract date directly from the stored value to avoid timezone conversion
+    const dateStr = String(evt.eventDate).split('T')[0];
+    if (!busyMap.has(evt.artistId)) {
+      busyMap.set(evt.artistId, new Set());
+    }
+    busyMap.get(evt.artistId)!.add(dateStr);
+  });
+
+  // 3. Get follower counts
+  const followerCounts = await Promise.all(
+    artistIds.map(async (id) => {
+      const { count: fc } = await supabase
+        .from('Follower')
+        .select('id', { count: 'exact' })
+        .eq('artistId', id);
+      return { id, followerCount: fc || 0 };
+    })
+  );
+  const followerMap = new Map(followerCounts.map((f) => [f.id, f.followerCount]));
+
+  // 4. Merge and optionally filter by date
+  let enrichedArtists = artists.map((artist) => ({
+    ...artist,
+    followerCount: followerMap.get(artist.id) || 0,
+    busyDates: Array.from(busyMap.get(artist.id) || []),
+  }));
+
+  // If a specific date is requested, only keep artists who are FREE on that date
+  if (date) {
+    // Date comes as yyyy-MM-dd string from frontend
+    const dateInput = String(date);
+    const filterDateStr = dateInput.includes('T') ? dateInput.split('T')[0] : dateInput;
+    enrichedArtists = enrichedArtists.filter(
+      (a) => !a.busyDates.includes(filterDateStr)
+    );
+  }
+
+  res.json({
+    success: true,
+    data: enrichedArtists,
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total: date ? enrichedArtists.length : (count || 0),
+      totalPages: Math.ceil((date ? enrichedArtists.length : (count || 0)) / Number(limit)),
+    },
+  });
+};
+
 // Get all artists with filters
 export const getArtists = async (req: AuthRequest, res: Response) => {
   const {

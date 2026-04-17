@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, query } from 'express-validator';
 import * as eventController from '../controllers/event.controller';
+import * as organizerCalendarController from '../controllers/organizerCalendar.controller';
 import { authenticate, authorize, optionalAuth } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate.middleware';
 import { uploadEventImage } from '../middleware/upload.middleware';
@@ -46,6 +47,59 @@ router.get(
 
 // Get user's interested events (must be BEFORE /:id to avoid route conflict)
 router.get('/user/interested', authenticate, eventController.getUserInterestedEvents);
+
+// ─── Organizer Calendar ────────────────────────────────────────────────
+// Get organizer's calendar events (filtered by month/year)
+router.get(
+  '/calendar',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  organizerCalendarController.getOrganizerCalendarEvents
+);
+
+// Get upcoming organizer calendar events
+router.get(
+  '/calendar/upcoming',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  organizerCalendarController.getUpcomingCalendarEvents
+);
+
+// Create organizer calendar event
+router.post(
+  '/calendar',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  [
+    body('title').notEmpty().withMessage('Title is required'),
+    body('eventDate').isISO8601().withMessage('Valid event date is required'),
+    body('type').optional().isIn(['cultural_show', 'workshop', 'meeting', 'rehearsal', 'site_visit', 'other']),
+  ],
+  validateRequest,
+  organizerCalendarController.createOrganizerCalendarEvent
+);
+
+// Update organizer calendar event
+router.put(
+  '/calendar/:eventId',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  [
+    body('title').optional().notEmpty(),
+    body('eventDate').optional().isISO8601(),
+    body('type').optional().isIn(['cultural_show', 'workshop', 'meeting', 'rehearsal', 'site_visit', 'other']),
+  ],
+  validateRequest,
+  organizerCalendarController.updateOrganizerCalendarEvent
+);
+
+// Delete organizer calendar event
+router.delete(
+  '/calendar/:eventId',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  organizerCalendarController.deleteOrganizerCalendarEvent
+);
 
 // Get event by ID
 router.get('/:id', optionalAuth, eventController.getEventById);
