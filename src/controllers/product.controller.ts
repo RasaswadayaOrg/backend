@@ -131,7 +131,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       images: images || [],
       category: category || null,
       stock: stock || 0,
-      price: price || 0,
+      price: price !== undefined ? Number(price) : 0,
       storeId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
