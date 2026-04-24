@@ -100,6 +100,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     images,
     category,
     stock,
+    price,
   } = req.body;
 
   // If not admin, get user's store
@@ -129,6 +130,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       images: images || [],
       category: category || null,
       stock: stock || 0,
+      price: price !== undefined ? Number(price) : 0,
       storeId,
     })
     .select('*')
@@ -175,7 +177,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
 
   const allowedFields = [
     'name', 'description', 'imageUrl', 'images',
-    'category', 'stock', 'isActive'
+    'category', 'stock', 'price', 'isActive'
   ];
 
   allowedFields.forEach((field) => {
