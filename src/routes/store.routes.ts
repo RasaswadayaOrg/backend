@@ -44,4 +44,7 @@ router.get('/:id/products', storeController.getStoreProducts);
 // Get user's store
 router.get('/user/my-store', authenticate, storeController.getMyStore);
 
+// Get orders for user's store (seller view)
+router.get('/user/my-store/orders', authenticate, storeController.getMyStoreOrders);
+
 export default router;
