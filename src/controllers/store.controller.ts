@@ -242,3 +242,88 @@ export const getMyStore = async (req: AuthRequest, res: Response) => {
     data: store,
   });
 };
+
+// Get orders for the current seller's store (orders containing their products)
+export const getMyStoreOrders = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+
+  // Find the seller's store
+  const { data: store, error: storeError } = await supabase
+    .from('Store')
+    .select('id')
+    .eq('ownerId', userId)
+    .single();
+
+  if (storeError || !store) {
+    return res.json({ success: true, data: [] });
+  }
+
+  // Get all product IDs for this store
+  const { data: storeProducts } = await supabase
+    .from('Product')
+    .select('id')
+    .eq('storeId', store.id);
+
+  const productIds = (storeProducts || []).map((p) => p.id);
+
+  if (productIds.length === 0) {
+    return res.json({ success: true, data: [] });
+  }
+
+  // Find OrderItems that reference these products and include order+buyer+product details
+  const { data: items, error: itemsError } = await supabase
+    .from('OrderItem')
+    .select(`
+      id,
+      quantity,
+      price,
+      orderId,
+      product:Product(id, name, imageUrl, storeId),
+      order:Order(id, status, shippingAddress, createdAt, totalAmount,
+        user:User!Order_userId_fkey(id, fullName, email))
+    `)
+    .in('productId', productIds);
+
+  if (itemsError) {
+    throw createError('Failed to fetch store orders', 500);
+  }
+
+  // Group items by order, filtering items to only this store's products
+  const orderMap = new Map<string, any>();
+  (items || []).forEach((it: any) => {
+    const order = it.order;
+    if (!order) return;
+    const key = order.id;
+    if (!orderMap.has(key)) {
+      orderMap.set(key, {
+        id: order.id,
+        status: order.status,
+        shippingAddress: order.shippingAddress,
+        createdAt: order.createdAt,
+        totalAmount: order.totalAmount,
+        buyer: order.user,
+        items: [],
+      });
+    }
+    orderMap.get(key).items.push({
+      id: it.id,
+      quantity: it.quantity,
+      price: it.price,
+      product: it.product,
+    });
+  });
+
+  const orders = Array.from(orderMap.values())
+    .map((o: any) => ({
+      ...o,
+      totalForStore: (o.items || []).reduce(
+        (sum: number, it: any) => sum + Number(it.price || 0) * Number(it.quantity || 0),
+        0
+      ),
+    }))
+    .sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+  res.json({ success: true, data: orders });
+};

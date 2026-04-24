@@ -13,7 +13,7 @@ export const getCart = async (req: AuthRequest, res: Response) => {
       id,
       quantity,
       createdAt,
-      product:Product(id, name, imageUrl, stock, storeId, store:Store!Product_storeId_fkey(id, name))
+      product:Product(id, name, imageUrl, price, stock, storeId, store:Store!Product_storeId_fkey(id, name))
     `)
     .eq('userId', userId)
     .order('createdAt', { ascending: false });
