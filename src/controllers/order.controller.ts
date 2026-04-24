@@ -17,7 +17,8 @@ export const getUserOrders = async (req: AuthRequest, res: Response) => {
       items:OrderItem(
         id,
         quantity,
-        product:Product(id, name, imageUrl)
+        price,
+        product:Product(id, name, imageUrl, store:Store!Product_storeId_fkey(id, name))
       )
     `, { count: 'exact' })
     .eq('userId', userId)
@@ -53,6 +54,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
       items:OrderItem(
         id,
         quantity,
+        price,
         product:Product(id, name, imageUrl, store:Store!Product_storeId_fkey(id, name))
       )
     `)
@@ -85,7 +87,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     .select(`
       id,
       quantity,
-      product:Product(id, stock, name)
+      product:Product(id, stock, name, price)
     `)
     .eq('userId', userId);
 
@@ -97,22 +99,29 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     throw createError('Cart is empty', 400);
   }
 
-  // Validate stock
+  // Validate stock and compute order total (price snapshot at purchase time)
   const orderItems: Array<{
     productId: string;
     quantity: number;
+    price: number;
   }> = [];
+
+  let totalAmount = 0;
 
   for (const item of cartItems) {
     const product = item.product as any;
-    
+
     if (product.stock < item.quantity) {
       throw createError(`Insufficient stock for ${product.name}`, 400);
     }
 
+    const price = Number(product.price || 0);
+    totalAmount += price * item.quantity;
+
     orderItems.push({
       productId: product.id,
       quantity: item.quantity,
+      price,
     });
   }
 
@@ -123,6 +132,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       userId,
       shippingAddress,
       status: 'PENDING',
+      totalAmount,
     })
     .select('*')
     .single();
@@ -167,7 +177,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       items:OrderItem(
         id,
         quantity,
-        product:Product(id, name, imageUrl)
+        price,
+        product:Product(id, name, imageUrl, store:Store!Product_storeId_fkey(id, name))
       )
     `)
     .eq('id', order.id)
