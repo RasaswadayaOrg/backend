@@ -27,7 +27,7 @@ router.get('/my-requests', authenticate, getMyRoleRequests);
 router.get('/pending', authenticate, authorize('ADMIN'), getPendingRoleRequests);
 router.get('/all', authenticate, authorize('ADMIN'), getAllRoleRequests);
 router.get('/:id', authenticate, authorize('ADMIN'), getRoleRequestById);
-router.patch('/:id/approve', authenticate, authorize('ADMIN'), approveRoleRequest);
-router.patch('/:id/reject', authenticate, authorize('ADMIN'), rejectRoleRequest);
+router.post('/:id/approve', authenticate, authorize('ADMIN'), approveRoleRequest);
+router.post('/:id/reject', authenticate, authorize('ADMIN'), rejectRoleRequest);
 
 export default router;

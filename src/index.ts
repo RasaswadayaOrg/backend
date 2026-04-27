@@ -20,8 +20,10 @@ import cartRoutes from './routes/cart.routes';
 import orderRoutes from './routes/order.routes';
 import userRoutes from './routes/user.routes';
 import adminRoutes from './routes/admin.routes';
-import roleApplicationRoutes from './routes/roleApplication.routes';
 import roleRequestRoutes from './routes/roleRequest.routes';
+import songsRoutes from './routes/songs.routes';
+import recommendationRoutes from './routes/recommendation.routes';
+import bookingRoutes from './routes/booking.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -30,16 +32,18 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
 }));
 app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static file serving for uploads
+// Serve static files (Crucial for displaying uploaded images)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Health check
@@ -55,12 +59,13 @@ app.use('/api/academies', academyRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api/role-applications', roleApplicationRoutes);
-app.use('/api/role-requests', roleRequestRoutes);
-
-app.use('/api/orders', orderRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/v1/orders', orderRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/role-requests', roleRequestRoutes);
+app.use('/api/v1/songs', songsRoutes);
+app.use('/api/v1/recommendations', recommendationRoutes);
+app.use('/api/v1/booking-requests', bookingRoutes);
 
 // 404 handler
 app.use((req, res) => {

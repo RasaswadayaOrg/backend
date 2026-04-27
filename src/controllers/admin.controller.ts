@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { prisma } from '../lib/db';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
+import bcrypt from 'bcryptjs';
 
 // Get admin dashboard stats (public - for admin panel use)
 export const getAdminStats = async (req: AuthRequest, res: Response) => {
@@ -23,16 +24,8 @@ export const getAdminStats = async (req: AuthRequest, res: Response) => {
       supabase.from('Product').select('id', { count: 'exact', head: true }),
       supabase.from('Academy').select('id', { count: 'exact', head: true }),
       supabase.from('Store').select('id', { count: 'exact', head: true }),
-      supabase.from('Order').select('id, totalPrice', { count: 'exact' })
+      supabase.from('Order').select('id', { count: 'exact', head: true })
     ]);
-
-    // Calculate total revenue
-    let totalRevenue = 0;
-    if (ordersResult.data) {
-      totalRevenue = ordersResult.data.reduce((sum, order: any) => 
-        sum + (parseFloat(order.totalPrice) || 0), 0
-      );
-    }
 
     res.json({
       success: true,
@@ -44,7 +37,6 @@ export const getAdminStats = async (req: AuthRequest, res: Response) => {
         totalAcademies: academiesResult.count || 0,
         totalStores: storesResult.count || 0,
         totalOrders: ordersResult.count || 0,
-        totalRevenue
       }
     });
   } catch (error) {
@@ -483,7 +475,6 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     const {
       name,
       description,
-      price,
       imageUrl,
       category,
       stock,
@@ -532,7 +523,6 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         id: productId,
         name,
         description,
-        price,
         imageUrl,
         category,
         stock,
@@ -568,7 +558,6 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     const {
       name,
       description,
-      price,
       imageUrl,
       category,
       stock,
@@ -580,7 +569,6 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       .update({
         name,
         description,
-        price,
         imageUrl,
         category,
         stock,
@@ -634,7 +622,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response) => {
     const [recentOrders, recentUsers, recentEvents] = await Promise.all([
       supabase
         .from('Order')
-        .select('id, totalPrice, status, createdAt, user:User!Order_userId_fkey(fullName)')
+        .select('id, status, createdAt, user:User!Order_userId_fkey(fullName)')
         .order('createdAt', { ascending: false })
         .limit(5),
       supabase
@@ -659,7 +647,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response) => {
           type: 'order',
           user: order.user?.fullName || 'Customer',
           action: 'placed an order',
-          target: `LKR ${Number(order.totalPrice).toLocaleString()}`,
+          target: `Order #${order.id.substring(0, 8)}`,
           time: order.createdAt,
           status: order.status
         });
@@ -736,35 +724,39 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       
     if (error) throw error;
     
-    // Fetch pending applications for all users
+    // Fetch pending role requests for all users
     const userIds = data?.map((user: any) => user.id) || [];
-    const pendingApplications = await prisma.roleApplication.findMany({
+    const pendingRequests = await prisma.roleRequest.findMany({
       where: {
         userId: { in: userIds },
         status: 'PENDING'
       },
       select: {
         userId: true,
-        role: true,
-        createdAt: true,
+        requestedRole: true,
+        requestedAt: true,
         id: true
       }
     });
 
-    // Create a map of userId to pending applications
-    const pendingAppsMap = new Map();
-    pendingApplications.forEach((app: any) => {
-      if (!pendingAppsMap.has(app.userId)) {
-        pendingAppsMap.set(app.userId, []);
+    // Create a map of userId to pending requests
+    const pendingRequestsMap = new Map();
+    pendingRequests.forEach((req: any) => {
+      if (!pendingRequestsMap.has(req.userId)) {
+        pendingRequestsMap.set(req.userId, []);
       }
-      pendingAppsMap.get(app.userId).push(app);
+      pendingRequestsMap.get(req.userId).push({
+        id: req.id,
+        role: req.requestedRole,
+        createdAt: req.requestedAt
+      });
     });
 
-    // Enhance user data with pending application info
+    // Enhance user data with pending request info
     const enhancedData = data?.map((user: any) => ({
       ...user,
-      pendingApplications: pendingAppsMap.get(user.id) || [],
-      hasPendingApplication: pendingAppsMap.has(user.id)
+      pendingApplications: pendingRequestsMap.get(user.id) || [],
+      hasPendingApplication: pendingRequestsMap.has(user.id)
     }));
 
     // Sort users with pending applications at the top
@@ -848,10 +840,10 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get pending role applications count (admin)
+// Get pending role requests count (admin)
 export const getPendingApplicationsCount = async (req: AuthRequest, res: Response) => {
   try {
-    const count = await prisma.roleApplication.count({
+    const count = await prisma.roleRequest.count({
       where: {
         status: 'PENDING'
       }
@@ -862,8 +854,8 @@ export const getPendingApplicationsCount = async (req: AuthRequest, res: Respons
       data: { count }
     });
   } catch (error) {
-    console.error('Error fetching pending applications count:', error);
-    res.status(500).json(createError('Failed to fetch pending applications count'));
+    console.error('Error fetching pending requests count:', error);
+    res.status(500).json(createError('Failed to fetch pending requests count'));
   }
 };
 
@@ -1066,5 +1058,421 @@ export const deleteStore = async (req: AuthRequest, res: Response) => {
     }
     
     throw createError('Failed to delete store', 500);
+  }
+};
+
+// Get user by ID with role requests
+export const getUserById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId || typeof userId !== 'string') {
+      throw createError('Valid User ID is required', 400);
+    }
+
+    // Fetch user with role requests
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        RoleRequest: {
+          orderBy: {
+            createdAt: 'desc'
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      throw createError('User not found', 404);
+    }
+
+    // Transform RoleRequest to match frontend expectations
+    const transformedUser = {
+      ...user,
+      roleApplications: user.RoleRequest?.map((req: any) => ({
+        id: req.id,
+        role: req.requestedRole,
+        status: req.status,
+        bio: req.reason,
+        portfolioUrl: req.textFields ? JSON.stringify(req.textFields) : null,
+        proofDocumentUrl: req.documents ? JSON.stringify(req.documents) : null,
+        notes: req.rejectionReason || null,
+        createdAt: req.requestedAt,
+        updatedAt: req.updatedAt
+      })) || []
+    };
+
+    // Remove the RoleRequest property from response
+    const { RoleRequest, ...userResponse } = transformedUser;
+
+    res.json({
+      success: true,
+      data: userResponse
+    });
+  } catch (error) {
+    console.error('Get user by ID error:', error);
+    
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    
+    throw createError('Failed to fetch user details', 500);
+  }
+};
+
+// --- Organizer Management ---
+
+export const createOrganizer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { email, password, fullName, phone, city, avatarUrl, bio } = req.body;
+    
+    // Check if user exists
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+        return res.status(400).json({ success: false, message: 'User with this email already exists' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        fullName,
+        phone,
+        city,
+        avatarUrl,
+        role: 'ORGANIZER'
+      }
+    });
+
+    res.status(201).json({ success: true, data: user });
+  } catch (error: any) {
+    console.error('Create organizer error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to create organizer' });
+  }
+};
+
+export const updateOrganizer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { fullName, phone, city, avatarUrl, bio } = req.body;
+    
+    // Check if user exists
+    const existing = await prisma.user.findUnique({ where: { id: id as string } });
+    if (!existing) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: id as string },
+      data: {
+        fullName,
+        phone,
+        city,
+        avatarUrl
+      }
+    });
+
+    res.json({ success: true, data: user });
+  } catch (error: any) {
+    console.error('Update organizer error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update organizer' });
+  }
+};
+
+// --- Post Management ---
+
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
+
+export const getAllPosts = async (req: AuthRequest, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+
+    // Get posts with artist info using Prisma
+    const [posts, total] = await Promise.all([
+      (prisma as any).post.findMany({
+        include: {
+          artist: {
+            select: {
+              id: true,
+              name: true,
+              photoUrl: true,
+            },
+          },
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      (prisma as any).post.count(),
+    ]);
+
+    // Transform posts with proper image URLs and counts
+    const postsWithCounts = posts.map((post: any) => ({
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      imageUrl: post.imageUrl?.startsWith('http') 
+        ? post.imageUrl 
+        : post.imageUrl ? `${API_BASE_URL}${post.imageUrl}` : null,
+      videoUrl: post.videoUrl,
+      source: post.source,
+      externalId: post.externalId,
+      publishedAt: post.publishedAt,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+      artistId: post.artistId,
+      artist: post.artist,
+      likesCount: post._count.likes,
+      commentsCount: post._count.comments,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        posts: postsWithCounts,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get all posts error:', error);
+    throw createError('Failed to fetch posts', 500);
+  }
+};
+
+export const getPostById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const post = await (prisma as any).post.findUnique({
+      where: { id },
+      include: {
+        artist: {
+          select: {
+            id: true,
+            name: true,
+            photoUrl: true,
+          },
+        },
+        _count: {
+          select: {
+            likes: true,
+            comments: true,
+          },
+        },
+        comments: {
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            userId: true,
+          },
+        },
+      },
+    });
+
+    if (!post) {
+      throw createError('Post not found', 404);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: post.id,
+        title: post.title,
+        content: post.content,
+        imageUrl: post.imageUrl?.startsWith('http') 
+          ? post.imageUrl 
+          : post.imageUrl ? `${API_BASE_URL}${post.imageUrl}` : null,
+        videoUrl: post.videoUrl,
+        source: post.source,
+        externalId: post.externalId,
+        publishedAt: post.publishedAt,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+        artistId: post.artistId,
+        artist: post.artist,
+        likesCount: post._count.likes,
+        commentsCount: post._count.comments,
+        recentComments: post.comments,
+      }
+    });
+  } catch (error) {
+    console.error('Get post by ID error:', error);
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    throw createError('Failed to fetch post', 500);
+  }
+};
+
+export const updatePost = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { title, content, imageUrl, videoUrl } = req.body;
+
+    // Check if post exists
+    const existingPost = await (prisma as any).post.findUnique({
+      where: { id },
+    });
+
+    if (!existingPost) {
+      throw createError('Post not found', 404);
+    }
+
+    const updatedPost = await (prisma as any).post.update({
+      where: { id },
+      data: {
+        title,
+        content,
+        imageUrl,
+        videoUrl,
+      },
+    });
+
+    res.json({
+      success: true,
+      data: updatedPost,
+      message: 'Post updated successfully'
+    });
+  } catch (error) {
+    console.error('Update post error:', error);
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    throw createError('Failed to update post', 500);
+  }
+};
+
+export const deletePost = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if post exists
+    const existingPost = await (prisma as any).post.findUnique({
+      where: { id },
+    });
+
+    if (!existingPost) {
+      throw createError('Post not found', 404);
+    }
+
+    // Delete the post (cascade will handle likes and comments)
+    await (prisma as any).post.delete({
+      where: { id },
+    });
+
+    res.json({
+      success: true,
+      message: 'Post deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete post error:', error);
+    if (error instanceof Error && 'statusCode' in error) {
+      throw error;
+    }
+    throw createError('Failed to delete post', 500);
+  }
+};
+
+
+
+// Store Owners
+
+export const createStoreOwner = async (req: AuthRequest, res: Response) => {
+  try {
+    const { email, password, fullName, phone, city, avatarUrl } = req.body;
+    
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    
+    if (existingUser) {
+      if (existingUser.role === 'STORE_OWNER') {
+        return res.status(400).json({ success: false, message: 'User is already a store owner' });
+      }
+      
+      const updatedUser = await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { 
+          role: 'STORE_OWNER',
+          fullName: fullName || existingUser.fullName,
+          phone: phone || existingUser.phone,
+          city: city || existingUser.city,
+          avatarUrl: avatarUrl || existingUser.avatarUrl
+        },
+        select: { id: true, email: true, fullName: true, role: true }
+      });
+      
+      return res.json({ success: true, data: updatedUser });
+    }
+    
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password || 'password123', salt);
+    
+    const newStoreOwner = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        fullName,
+        phone,
+        city,
+        avatarUrl,
+        role: 'STORE_OWNER'
+      },
+      select: { id: true, email: true, fullName: true, role: true }
+    });
+    
+    res.status(201).json({ success: true, data: newStoreOwner });
+  } catch (error) {
+    console.error('Create store owner error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create store owner' });
+  }
+};
+
+export const updateStoreOwner = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const { email, password, fullName, phone, city, avatarUrl } = req.body;
+    
+    const updateData: any = {
+      fullName,
+      phone,
+      city,
+      avatarUrl
+    };
+    
+    if (email) updateData.email = email;
+    
+    if (password) {
+      const salt = await bcrypt.genSalt(10);
+      updateData.password = await bcrypt.hash(password, salt);
+    }
+    
+    const updatedStoreOwner = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: { id: true, email: true, fullName: true, phone: true, city: true, role: true }
+    });
+    
+    res.json({ success: true, data: updatedStoreOwner });
+  } catch (error) {
+    console.error('Update store owner error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update store owner' });
   }
 };

@@ -8,8 +8,6 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
   const {
     category,
     search,
-    minPrice,
-    maxPrice,
     page = 1,
     limit = 12,
   } = req.query;
@@ -27,14 +25,6 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
 
   if (search) {
     query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
-  }
-
-  if (minPrice) {
-    query = query.gte('price', Number(minPrice));
-  }
-
-  if (maxPrice) {
-    query = query.lte('price', Number(maxPrice));
   }
 
   query = query.order('createdAt', { ascending: false });
@@ -106,11 +96,11 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
   const {
     name,
     description,
-    price,
     imageUrl,
     images,
     category,
     stock,
+    price,
   } = req.body;
 
   // If not admin, get user's store
@@ -134,14 +124,17 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
   const { data: product, error } = await supabase
     .from('Product')
     .insert({
+      id: `prod-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       name,
       description: description || null,
-      price,
       imageUrl: imageUrl || null,
       images: images || [],
       category: category || null,
       stock: stock || 0,
+      price: price || 0,
       storeId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
     .select('*')
     .single();
@@ -186,11 +179,11 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
   };
 
   const allowedFields = [
-    'name', 'description', 'price', 'imageUrl', 'images',
-    'category', 'stock', 'isActive'
+    'name', 'description', 'imageUrl', 'images',
+    'category', 'stock', 'price', 'isActive'
   ];
 
-  allowedFields.forEach((field) => {
+  allowedFields.forEach(field => {
     if (req.body[field] !== undefined) {
       updateData[field] = req.body[field];
     }

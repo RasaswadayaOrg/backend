@@ -7,31 +7,33 @@ datasource db {
 }
 
 model User {
-  id               String            @id @default(cuid())
-  email            String            @unique
-  password         String
-  fullName         String
-  firstName        String?
-  lastName         String?
-  phone            String?
-  city             String?
-  avatarUrl        String?
-  role             UserRole          @default(USER)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  artist           Artist?
-  cartItems        CartItem[]
-  enquiries        Enquiry[]
-  organizedEvents  Event[]           @relation("OrganizerEvents")
-  follows          Follower[]
-  interests        Interest[]
-  orders           Order[]
-  reminders        Reminder[]
-  roleApplications RoleApplication[]
-  RoleRequest      RoleRequest[]
-  store            Store?
-  tickets          Ticket[]
-  preferences      UserPreference?
+  id              String           @id @default(cuid())
+  email           String           @unique
+  password        String
+  fullName        String
+  firstName       String?
+  lastName        String?
+  phone           String?
+  city            String?
+  avatarUrl       String?
+  role            UserRole         @default(USER)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  artist          Artist?
+  cartItems       CartItem[]
+  enquiries       Enquiry[]
+  organizedEvents Event[]          @relation("OrganizerEvents")
+  calendarEvents  OrganizerEvent[]
+  follows         Follower[]
+  interests       Interest[]
+  orders          Order[]
+  reminders       Reminder[]
+  recommendations Recommendation[]
+  RoleRequest     RoleRequest[]
+  store           Store?
+  tickets         Ticket[]
+  bookingRequests BookingRequest[]
+  preferences     UserPreference?
 }
 
 model UserPreference {
@@ -57,9 +59,9 @@ model Event {
   city         String
   category     String
   imageUrl     String?
-  price        Float         @default(0)
   capacity     Int?
   ticketLink   String?
+  price        Float         @default(0)
   isFeatured   Boolean       @default(false)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -73,7 +75,6 @@ model Event {
 model Ticket {
   id           String       @id @default(cuid())
   quantity     Int          @default(1)
-  totalPrice   Float
   status       TicketStatus @default(PENDING)
   purchaseDate DateTime     @default(now())
   userId       String
@@ -94,23 +95,70 @@ model Interest {
 }
 
 model Artist {
-  id           String        @id @default(cuid())
-  name         String
-  profession   String
-  genre        String
-  bio          String?
-  photoUrl     String?
-  coverUrl     String?
-  location     String?
-  website      String?
-  instagram    String?
-  facebook     String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  userId       String?       @unique
-  user         User?         @relation(fields: [userId], references: [id])
-  followers    Follower[]
-  performances Performance[]
+  id         String  @id @default(cuid())
+  name       String
+  profession String
+  genre      String
+  bio        String?
+  photoUrl   String?
+  coverUrl   String?
+  location   String?
+  website    String?
+  instagram  String?
+  facebook   String?
+
+  // Social Integration
+  fbPageId         String?
+  fbAccessToken    String?
+  fbTokenExpiresAt DateTime?
+  fbSourceType     String? // 'page' or 'profile' — determines feed endpoint
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  userId          String?          @unique
+  user            User?            @relation(fields: [userId], references: [id])
+  followers       Follower[]
+  performances    Performance[]
+  bookingRequests BookingRequest[]
+  posts           Post[]
+  calendarEvents  ArtistEvent[]
+}
+
+model ArtistEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  eventDate   DateTime
+  startTime   String? // e.g. "19:00"
+  endTime     String? // e.g. "21:00"
+  location    String?
+  type        String   @default("gig") // gig, private, recording, rehearsal, other
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  artistId    String
+  artist      Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@index([artistId])
+  @@index([eventDate])
+}
+
+model OrganizerEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  eventDate   DateTime
+  startTime   String? // e.g. "19:00"
+  endTime     String? // e.g. "21:00"
+  location    String?
+  type        String   @default("cultural_show") // cultural_show, workshop, meeting, rehearsal, site_visit, other
+  artistCount Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  organizerId String
+  organizer   User     @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
+  @@index([eventDate])
 }
 
 model Follower {
@@ -156,7 +204,6 @@ model Course {
   name        String
   description String?
   duration    String?
-  fee         Float?
   academyId   String
   academy     Academy @relation(fields: [academyId], references: [id])
 }
@@ -194,11 +241,11 @@ model Product {
   id          String      @id @default(cuid())
   name        String
   description String?
-  price       Float
   imageUrl    String?
   images      String[]
   category    String?
   stock       Int         @default(0)
+  price       Float       @default(0)
   isActive    Boolean     @default(true)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -229,7 +276,6 @@ model CartItem {
 
 model Order {
   id              String      @id @default(cuid())
-  totalPrice      Float
   status          OrderStatus @default(PENDING)
   shippingAddress String?
   createdAt       DateTime    @default(now())
@@ -242,7 +288,6 @@ model Order {
 model OrderItem {
   id        String  @id @default(cuid())
   quantity  Int
-  unitPrice Float
   orderId   String
   productId String
   order     Order   @relation(fields: [orderId], references: [id])
@@ -258,18 +303,19 @@ model Reminder {
   user      User     @relation(fields: [userId], references: [id])
 }
 
-model RoleApplication {
-  id               String            @id @default(cuid())
-  userId           String
-  role             UserRole
-  status           ApplicationStatus @default(PENDING)
-  bio              String?
-  portfolioUrl     String?
-  proofDocumentUrl String?
-  notes            String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Recommendation {
+  id              String   @id @default(cuid())
+  userId          String
+  recommendedType String // "ARTIST" or "EVENT"
+  recommendedId   String // The ID of the artist or event
+  score           Float // AI confidence score (e.g. 0.85)
+  reason          String? // Short reason (e.g. "Because you like contemporary music")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([recommendedType])
 }
 
 model RoleRequest {
@@ -323,14 +369,82 @@ enum EnquiryStatus {
   CLOSED
 }
 
-enum ApplicationStatus {
+enum RequestStatus {
   PENDING
   APPROVED
   REJECTED
 }
 
-enum RequestStatus {
+model Post {
+  id          String        @id @default(cuid())
+  title       String?
+  content     String?
+  imageUrl    String?
+  videoUrl    String?
+  source      PostSource    @default(RASASWADAYA)
+  externalId  String? // ID from Facebook/Instagram
+  publishedAt DateTime      @default(now())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  artistId    String
+  artist      Artist        @relation(fields: [artistId], references: [id])
+  likes       PostLike[]
+  comments    PostComment[]
+
+  @@index([externalId])
+  @@index([artistId])
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([postId])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+enum PostSource {
+  RASASWADAYA
+  FACEBOOK
+  INSTAGRAM
+}
+
+model BookingRequest {
+  id          String        @id @default(cuid())
+  eventName   String
+  date        DateTime
+  time        String
+  venue       String
+  description String?
+  status      BookingStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  organizerId String
+  artistId    String
+  organizer   User          @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  artist      Artist        @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
+  @@index([artistId])
+}
+
+enum BookingStatus {
   PENDING
-  APPROVED
+  ACCEPTED
   REJECTED
 }

@@ -39,16 +39,16 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
           city: true,
           role: true,
           createdAt: true,
-          roleApplications: {
+          RoleRequest: {
             select: {
               id: true,
-              role: true,
+              requestedRole: true,
               status: true,
-              bio: true,
-              portfolioUrl: true,
-              proofDocumentUrl: true,
-              notes: true,
-              createdAt: true,
+              reason: true,
+              textFields: true,
+              documents: true,
+              rejectionReason: true,
+              requestedAt: true,
               updatedAt: true,
             },
             orderBy: {
@@ -104,21 +104,35 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
   supabase.from('UserPreference').select('*').eq('userId', userId).maybeSingle(),
     ]);
 
-    // Fetch role applications using Prisma (more detailed fields)
-    const roleApplications = await prisma.roleApplication.findMany({
+    // Fetch role requests using Prisma (more detailed fields)
+    const roleRequests = await prisma.roleRequest.findMany({
       where: { userId: userId },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
-        role: true,
-        bio: true,
-        portfolioUrl: true,
-        proofDocumentUrl: true,
+        requestedRole: true,
+        reason: true,
+        textFields: true,
+        documents: true,
         status: true,
-        createdAt: true,
+        rejectionReason: true,
+        requestedAt: true,
         updatedAt: true,
       }
     });
+
+    // Transform role requests to match frontend expectations
+    const roleApplications = roleRequests.map((req: any) => ({
+      id: req.id,
+      role: req.requestedRole,
+      bio: req.reason,
+      portfolioUrl: req.textFields ? JSON.stringify(req.textFields) : null,
+      proofDocumentUrl: req.documents ? JSON.stringify(req.documents) : null,
+      status: req.status,
+      notes: req.rejectionReason,
+      createdAt: req.requestedAt,
+      updatedAt: req.updatedAt,
+    }));
 
     res.json({
       success: true,

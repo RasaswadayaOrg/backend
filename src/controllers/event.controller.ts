@@ -3,6 +3,13 @@ import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
 
+// Helper to generate unique event IDs
+const generateEventId = (): string => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 9);
+  return `evt-${timestamp}-${random}`;
+};
+
 // Get all events with filters and pagination
 export const getEvents = async (req: AuthRequest, res: Response) => {
   const {
@@ -56,6 +63,7 @@ export const getEvents = async (req: AuthRequest, res: Response) => {
   const { data: events, error, count } = await query;
 
   if (error) {
+    console.error('Fetch events error:', error);
     throw createError('Failed to fetch events', 500);
   }
 
@@ -166,6 +174,11 @@ export const getEventById = async (req: AuthRequest, res: Response) => {
 // Create event
 export const createEvent = async (req: AuthRequest, res: Response) => {
   const organizerId = req.user?.id;
+
+  if (!organizerId) {
+    throw createError('Authentication required', 401);
+  }
+
   const {
     title,
     description,
@@ -178,15 +191,35 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
     city,
     category,
     imageUrl,
-    price,
     capacity,
     ticketLink,
+    price,
     isFeatured,
+    artistIds,
   } = req.body;
+
+  // Validate event date is in the future
+  const eventDateTime = new Date(eventDate);
+  if (eventDateTime <= new Date()) {
+    throw createError('Event date must be in the future', 400);
+  }
+
+  // Validate end date is after start date if provided
+  if (endDate) {
+    const endDateTime = new Date(endDate);
+    if (endDateTime <= eventDateTime) {
+      throw createError('End date must be after event date', 400);
+    }
+  }
+
+  const eventId = generateEventId();
+
+  const now = new Date().toISOString();
 
   const { data: event, error } = await supabase
     .from('Event')
     .insert({
+      id: eventId,
       title,
       description,
       eventDate,
@@ -198,13 +231,15 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
       city,
       category,
       imageUrl: imageUrl || null,
-      price: price || 0,
-      capacity: capacity || null,
+      capacity: capacity ? Number(capacity) : null,
       ticketLink: ticketLink || null,
+      price: price ? Number(price) : 0,
       isFeatured: isFeatured || false,
       organizerId,
+      createdAt: now,
+      updatedAt: now,
     })
-    .select('*')
+    .select('*, organizer:User!Event_organizerId_fkey(id, fullName)')
     .single();
 
   if (error) {
@@ -212,10 +247,35 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
     throw createError('Failed to create event', 500);
   }
 
+  // Tag artists to the event via Performance records
+  let taggedArtists: any[] = [];
+  if (artistIds && Array.isArray(artistIds) && artistIds.length > 0) {
+    const performanceRecords = artistIds.map((artistId: string) => ({
+      artistId,
+      eventId,
+      role: null,
+    }));
+
+    const { data: performances, error: perfError } = await supabase
+      .from('Performance')
+      .insert(performanceRecords)
+      .select('*, artist:Artist(id, name, profession, genre, photoUrl)');
+
+    if (perfError) {
+      console.error('Tag artists error:', perfError);
+      // Event was created successfully, so we don't throw — just log
+    } else {
+      taggedArtists = (performances || []).map((p: any) => p.artist);
+    }
+  }
+
   res.status(201).json({
     success: true,
     message: 'Event created successfully',
-    data: event,
+    data: {
+      ...event,
+      taggedArtists,
+    },
   });
 };
 
@@ -224,6 +284,10 @@ export const updateEvent = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.id;
   const userRole = req.user?.role;
+
+  if (!userId) {
+    throw createError('Authentication required', 401);
+  }
 
   // Check if event exists and user owns it
   const { data: existingEvent, error: fetchError } = await supabase
@@ -247,8 +311,8 @@ export const updateEvent = async (req: AuthRequest, res: Response) => {
 
   const allowedFields = [
     'title', 'description', 'eventDate', 'endDate', 'startTime', 'endTime',
-    'location', 'venue', 'city', 'category', 'imageUrl', 'price',
-    'capacity', 'ticketLink', 'isFeatured'
+    'location', 'venue', 'city', 'category', 'imageUrl',
+    'capacity', 'ticketLink', 'price', 'isFeatured'
   ];
 
   allowedFields.forEach((field) => {
@@ -257,14 +321,23 @@ export const updateEvent = async (req: AuthRequest, res: Response) => {
     }
   });
 
+  // Type-cast numeric fields
+  if (updateData.capacity !== undefined) {
+    updateData.capacity = updateData.capacity ? Number(updateData.capacity) : null;
+  }
+  if (updateData.price !== undefined) {
+    updateData.price = Number(updateData.price) || 0;
+  }
+
   const { data: event, error } = await supabase
     .from('Event')
     .update(updateData)
     .eq('id', id)
-    .select('*')
+    .select('*, organizer:User!Event_organizerId_fkey(id, fullName)')
     .single();
 
   if (error) {
+    console.error('Update event error:', error);
     throw createError('Failed to update event', 500);
   }
 
@@ -281,10 +354,14 @@ export const deleteEvent = async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id;
   const userRole = req.user?.role;
 
+  if (!userId) {
+    throw createError('Authentication required', 401);
+  }
+
   // Check if event exists and user owns it
   const { data: existingEvent, error: fetchError } = await supabase
     .from('Event')
-    .select('organizerId')
+    .select('organizerId, title')
     .eq('id', id)
     .single();
 
@@ -297,20 +374,32 @@ export const deleteEvent = async (req: AuthRequest, res: Response) => {
     throw createError('Not authorized to delete this event', 403);
   }
 
-  // Delete related records first
-  await supabase.from('Interest').delete().eq('eventId', id);
-  await supabase.from('Performance').delete().eq('eventId', id);
-  await supabase.from('Ticket').delete().eq('eventId', id);
+  // Delete related records first (cascade manually)
+  const { error: interestError } = await supabase.from('Interest').delete().eq('eventId', id);
+  if (interestError) {
+    console.error('Delete interests error:', interestError);
+  }
+
+  const { error: performanceError } = await supabase.from('Performance').delete().eq('eventId', id);
+  if (performanceError) {
+    console.error('Delete performances error:', performanceError);
+  }
+
+  const { error: ticketError } = await supabase.from('Ticket').delete().eq('eventId', id);
+  if (ticketError) {
+    console.error('Delete tickets error:', ticketError);
+  }
 
   const { error } = await supabase.from('Event').delete().eq('id', id);
 
   if (error) {
+    console.error('Delete event error:', error);
     throw createError('Failed to delete event', 500);
   }
 
   res.json({
     success: true,
-    message: 'Event deleted successfully',
+    message: `Event "${existingEvent.title}" deleted successfully`,
   });
 };
 
@@ -393,6 +482,7 @@ export const getUserInterestedEvents = async (req: AuthRequest, res: Response) =
     .order('createdAt', { ascending: false });
 
   if (error) {
+    console.error('Fetch interested events error:', error);
     throw createError('Failed to fetch interested events', 500);
   }
 
@@ -401,5 +491,60 @@ export const getUserInterestedEvents = async (req: AuthRequest, res: Response) =
   res.json({
     success: true,
     data: events,
+  });
+};
+
+// Get organizer's own events with pagination
+export const getOrganizerEvents = async (req: AuthRequest, res: Response) => {
+  const organizerId = req.user?.id;
+
+  if (!organizerId) {
+    throw createError('Authentication required', 401);
+  }
+
+  const { page = 1, limit = 50 } = req.query;
+  const offset = (Number(page) - 1) * Number(limit);
+
+  const { data: events, error, count } = await supabase
+    .from('Event')
+    .select('*, organizer:User!Event_organizerId_fkey(id, fullName)', { count: 'exact' })
+    .eq('organizerId', organizerId)
+    .order('createdAt', { ascending: false })
+    .range(offset, offset + Number(limit) - 1);
+
+  if (error) {
+    console.error('Fetch organizer events error:', error);
+    throw createError('Failed to fetch organizer events', 500);
+  }
+
+  res.json({
+    success: true,
+    data: events || [],
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total: count || 0,
+      totalPages: Math.ceil((count || 0) / Number(limit)),
+    },
+  });
+};
+
+// Upload event image
+export const uploadImage = async (req: AuthRequest, res: Response) => {
+  if (!req.file) {
+    throw createError('No image file provided', 400);
+  }
+
+  const imageUrl = `/uploads/events/${req.file.filename}`;
+
+  res.json({
+    success: true,
+    message: 'Image uploaded successfully',
+    data: {
+      imageUrl,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+    },
   });
 };

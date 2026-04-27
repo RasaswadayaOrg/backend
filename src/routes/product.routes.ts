@@ -12,8 +12,6 @@ router.get(
   [
     query('category').optional().isString(),
     query('search').optional().isString(),
-    query('minPrice').optional().isFloat({ min: 0 }),
-    query('maxPrice').optional().isFloat({ min: 0 }),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 50 }),
   ],
@@ -34,7 +32,6 @@ router.post(
   authorize('STORE_OWNER', 'ADMIN'),
   [
     body('name').notEmpty().withMessage('Product name is required'),
-    body('price').isFloat({ min: 0 }).withMessage('Valid price is required'),
     body('storeId').optional().isString(),
   ],
   validateRequest,
