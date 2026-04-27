@@ -96,9 +96,12 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
   const { data: cartItem, error } = await supabase
     .from('CartItem')
     .insert({
+      id: `cart-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       userId,
       productId,
       quantity,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
     .select('*')
     .single();
