@@ -26,7 +26,7 @@ const validateRoleRequirements = (
         return { valid: false, message: 'Approval letter is required for Organizer role' };
       }
       break;
-    case 'SELLER':
+    case 'STORE_OWNER':
       if (!documents[role]) {
         return { valid: false, message: 'Business license is required for Seller role' };
       }
@@ -69,7 +69,7 @@ export const createRoleRequest = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const validRoles = ['ARTIST', 'ORGANIZER', 'SELLER', 'TEACHER'];
+    const validRoles = ['ARTIST', 'ORGANIZER', 'STORE_OWNER', 'TEACHER'];
     const invalidRoles = requestedRoles.filter(r => !validRoles.includes(r));
     
     if (invalidRoles.length > 0) {
@@ -370,6 +370,35 @@ export const approveRoleRequest = async (req: AuthRequest, res: Response) => {
       console.log('✅ User role updated successfully');
 
       // If role is ARTIST, create Artist profile automatically
+      
+      // If role is STORE_OWNER, create Store profile automatically
+      if (request.requestedRole === 'STORE_OWNER') {
+        console.log('🏪 Requested role is STORE_OWNER, checking for existing store...');
+        
+        const existingStore = await prisma.store.findUnique({
+          where: { ownerId: request.userId }
+        });
+
+        if (!existingStore) {
+          console.log('📝 Creating new store profile...');
+          
+          try {
+            await prisma.store.create({
+              data: {
+                ownerId: request.userId,
+                name: request.user.fullName ? `${request.user.fullName}'s Store` : 'My Store',
+                description: request.reason || 'Welcome to my store!',
+              }
+            });
+            console.log('✅ Store profile created successfully!');
+          } catch (error) {
+            console.error('❌ Failed to create store profile:', error);
+          }
+        } else {
+          console.log('ℹ️ Store profile already exists, skipping creation');
+        }
+      }
+
       if (request.requestedRole === 'ARTIST') {
         console.log('🎨 Requested role is ARTIST, checking for existing profile...');
         

@@ -100,6 +100,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     images,
     category,
     stock,
+    price,
   } = req.body;
 
   // If not admin, get user's store
@@ -123,13 +124,17 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
   const { data: product, error } = await supabase
     .from('Product')
     .insert({
+      id: `prod-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       name,
       description: description || null,
       imageUrl: imageUrl || null,
       images: images || [],
       category: category || null,
       stock: stock || 0,
+      price: price || 0,
       storeId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
     .select('*')
     .single();
@@ -175,10 +180,10 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
 
   const allowedFields = [
     'name', 'description', 'imageUrl', 'images',
-    'category', 'stock', 'isActive'
+    'category', 'stock', 'price', 'isActive'
   ];
 
-  allowedFields.forEach((field) => {
+  allowedFields.forEach(field => {
     if (req.body[field] !== undefined) {
       updateData[field] = req.body[field];
     }

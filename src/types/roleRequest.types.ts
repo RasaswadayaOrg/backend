@@ -1,4 +1,4 @@
-export type UserRole = 'USER' | 'ARTIST' | 'ORGANIZER' | 'SELLER' | 'TEACHER' | 'ADMIN';
+export type UserRole = 'USER' | 'ARTIST' | 'ORGANIZER' | 'STORE_OWNER' | 'TEACHER' | 'ADMIN';
 export type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export interface CreateRoleRequestDTO {

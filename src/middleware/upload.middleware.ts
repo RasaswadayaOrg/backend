@@ -45,7 +45,7 @@ export const uploadRoleDocuments = multer({
 export const uploadMultipleRoleDocuments = uploadRoleDocuments.fields([
   { name: 'document_ARTIST', maxCount: 1 },
   { name: 'document_ORGANIZER', maxCount: 1 },
-  { name: 'document_SELLER', maxCount: 1 },
+  { name: 'document_STORE_OWNER', maxCount: 1 },
   { name: 'document_TEACHER', maxCount: 1 },
 ]);
 

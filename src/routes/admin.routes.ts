@@ -50,6 +50,8 @@ router.put('/users/:id/role', adminController.updateUserRole);
 
 // Admin organizer endpoints
 router.post('/organizers', adminController.createOrganizer);
+router.post("/store-owners", adminController.createStoreOwner);
+router.put("/store-owners/:id", adminController.updateStoreOwner);
 router.put('/organizers/:id', adminController.updateOrganizer);
 
 // Admin post endpoints
