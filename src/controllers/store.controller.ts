@@ -242,3 +242,59 @@ export const getMyStore = async (req: AuthRequest, res: Response) => {
     data: store,
   });
 };
+
+// Get orders that contain products from the logged-in user's store
+export const getMyStoreOrders = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+
+  // Find the store for this user
+  const { data: store } = await supabase
+    .from('Store')
+    .select('id')
+    .eq('ownerId', userId)
+    .single();
+
+  if (!store) {
+    return res.json({ success: true, data: [] });
+  }
+
+  // Fetch recent orders with nested items + products and buyer info, then filter server-side
+  const { data: orders, error } = await supabase
+    .from('Order')
+    .select(`
+      *,
+      items:OrderItem(id, quantity, price, product:Product(id, name, imageUrl, storeId)),
+      buyer:User!Order_userId_fkey(id, fullName, email)
+    `)
+    .order('createdAt', { ascending: false });
+
+  if (error || !orders) {
+    throw createError('Failed to fetch orders', 500);
+  }
+
+  // Keep only orders that have at least one item from this store
+  const filtered = (orders as any[])
+    .map((o) => ({ ...o }))
+    .filter((o) => Array.isArray(o.items) && o.items.some((it: any) => it.product && it.product.storeId === store.id))
+    .map((o) => {
+      // compute total for this store only
+      const itemsForStore = o.items.filter((it: any) => it.product && it.product.storeId === store.id);
+      const totalForStore = itemsForStore.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 0)), 0);
+      return {
+        id: o.id,
+        status: o.status,
+        shippingAddress: o.shippingAddress,
+        createdAt: o.createdAt,
+        totalForStore,
+        buyer: o.buyer || null,
+        items: itemsForStore.map((it: any) => ({
+          id: it.id,
+          quantity: it.quantity,
+          price: it.price,
+          product: it.product,
+        })),
+      };
+    });
+
+  res.json({ success: true, data: filtered });
+};

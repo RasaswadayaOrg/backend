@@ -18,6 +18,12 @@ router.get(
   storeController.getStores
 );
 
+// Get user's store
+router.get('/user/my-store', authenticate, storeController.getMyStore);
+
+// Get orders for the logged-in user's store
+router.get('/user/my-store/orders', authenticate, storeController.getMyStoreOrders);
+
 // Get store by ID
 router.get('/:id', optionalAuth, storeController.getStoreById);
 
@@ -43,5 +49,8 @@ router.get('/:id/products', storeController.getStoreProducts);
 
 // Get user's store
 router.get('/user/my-store', authenticate, storeController.getMyStore);
+
+// Get orders for the logged-in user's store
+router.get('/user/my-store/orders', authenticate, storeController.getMyStoreOrders);
 
 export default router;

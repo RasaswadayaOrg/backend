@@ -24,6 +24,7 @@ import roleRequestRoutes from './routes/roleRequest.routes';
 import songsRoutes from './routes/songs.routes';
 import recommendationRoutes from './routes/recommendation.routes';
 import bookingRoutes from './routes/booking.routes';
+import chatRoutes from './routes/chat.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -66,6 +67,7 @@ app.use('/api/v1/role-requests', roleRequestRoutes);
 app.use('/api/v1/songs', songsRoutes);
 app.use('/api/v1/recommendations', recommendationRoutes);
 app.use('/api/v1/booking-requests', bookingRoutes);
+app.use('/api/v1/chat', chatRoutes);
 
 // 404 handler
 app.use((req, res) => {

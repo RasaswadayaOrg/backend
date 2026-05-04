@@ -34,6 +34,9 @@ model User {
   tickets         Ticket[]
   bookingRequests BookingRequest[]
   preferences     UserPreference?
+
+  buyerConversations Conversation[] @relation("BuyerConversations")
+  sentMessages       Message[]      @relation("SentMessages")
 }
 
 model UserPreference {
@@ -235,6 +238,7 @@ model Store {
   ownerId     String    @unique
   products    Product[]
   owner       User      @relation(fields: [ownerId], references: [id])
+  conversations Conversation[] @relation("StoreConversations")
 }
 
 model Product {
@@ -447,4 +451,32 @@ enum BookingStatus {
   PENDING
   ACCEPTED
   REJECTED
+}
+
+// --- Chat System Models ---
+
+model Conversation {
+  id        String   @id @default(cuid())
+  buyerId   String
+  storeId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  buyer     User      @relation("BuyerConversations", fields: [buyerId], references: [id], onDelete: Cascade)
+  store     Store     @relation("StoreConversations", fields: [storeId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@unique([buyerId, storeId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  senderId       String
+  text           String
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
 }
