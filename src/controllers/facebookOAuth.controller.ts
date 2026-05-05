@@ -139,3 +139,75 @@ export const selectPage = async (req: AuthRequest, res: Response) => {
 
   res.json({ message: `Facebook page "${pageName || pageId}" connected successfully.` });
 };
+
+// Step 4: Fetch Live Facebook Feed (Directly from FB, without syncing to DB)
+export const getLiveFacebookFeed = async (req: AuthRequest, res: Response) => {
+  const artistId = req.params.artistId as string;
+
+  try {
+    // 1. Fetch artist's FB credentials from DB
+    const { data: artist, error } = await supabase
+      .from('Artist')
+      .select('id, fbPageId, fbAccessToken')
+      .eq('id', artistId)
+      .single();
+
+    if (error || !artist) {
+      throw createError('Artist not found', 404);
+    }
+
+    if (!artist.fbPageId || !artist.fbAccessToken) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Facebook Page is not connected. Please connect your Facebook page first.' 
+      });
+    }
+
+    // 2. Fetch directly from Facebook Graph API (No database save)
+    // We are requesting posts, the message, pictures, and creation time
+    const fbApiUrl = `${FB_GRAPH_API}/${artist.fbPageId}/posts?` +
+      `fields=id,message,created_time,full_picture,permalink_url` +
+      `&access_token=${artist.fbAccessToken}` +
+      `&limit=50`; // Fetch more items to account for filtered out posts
+
+    const fbRes = await fetch(fbApiUrl);
+    const fbData: any = await fbRes.json();
+
+    if (fbData.error) {
+      console.error('Facebook live API error:', fbData.error);
+      if (fbData.error.code === 190) {
+        return res.status(401).json({ success: false, message: 'Facebook token expired. Please reconnect.' });
+      }
+      throw createError('Failed to fetch from Facebook API', 500);
+    }
+
+    // 3. Filter posts by @rasaswadaya tag and format them without saving
+    const livePosts = (fbData.data || [])
+      .filter((post: any) => post.message && post.message.toLowerCase().includes('@rasaswadaya'))
+      .map((post: any) => ({
+        id: `live_fb_${post.id}`,
+        artistId: artist.id,
+        content: post.message || '',
+        imageUrl: post.full_picture || null,
+        videoUrl: null,
+        source: 'FACEBOOK', // Identifies that this is a Facebook post
+        externalId: post.id,
+        facebookUrl: post.permalink_url, // Direct link to FB
+        createdAt: post.created_time,
+        updatedAt: post.created_time,
+        likesCount: 0,
+        commentsCount: 0,
+        isLiveProxy: true // Custom flag to inform frontend this isn't from our DB
+    }));
+
+    // 4. Return directly to frontend
+    res.json({
+      success: true,
+      message: 'Live Facebook feed fetched successfully',
+      data: livePosts
+    });
+    
+  } catch (error: any) {
+    throw createError(error.message || 'Error fetching live Facebook feed', error.statusCode || 500);
+  }
+};

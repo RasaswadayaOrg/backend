@@ -63,10 +63,14 @@ router.delete('/posts/:id', adminController.deletePost);
 // Recent activity endpoint
 router.get('/activity', adminController.getRecentActivity);
 
-// Ad endpoints (commented out - not yet implemented in admin.controller.ts)
-// router.get('/ads', adminController.getAds);
-// router.get('/ads/placement/:placement', adminController.getAdsForPlacement);
-// router.get('/ads/:id', adminController.getAd);
-// router.post('/ads/:id/click', adminController.trackAdClick);
+// Ad endpoints
+router.get('/ads', adminController.getAds);
+router.post('/ads', adminController.createAd);
+router.get('/ads/placement/:placement', adminController.getAdsForPlacement);
+router.get('/ads/:id', adminController.getAd);
+router.put('/ads/:id', adminController.updateAd);
+router.delete('/ads/:id', adminController.deleteAd);
+router.patch('/ads/:id/toggle', adminController.toggleAdStatus);
+router.post('/ads/:id/click', adminController.trackAdClick);
 
 export default router;

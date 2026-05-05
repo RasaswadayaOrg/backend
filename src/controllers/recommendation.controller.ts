@@ -14,8 +14,16 @@ export const getUserRecommendations = async (req: AuthRequest, res: Response) =>
 
     try {
       // Step 1: Try to get Real-Time Recommendations from AI API
-      const aiResponse = await fetch(`http://localhost:8000/recommend/${userId}`);
+      let aiResponse = await fetch(`http://localhost:8000/recommend/${userId}`);
       
+      // If user is not found in AI graph, trigger a refresh to sync DB to AI
+      if (aiResponse.status === 404) {
+        console.log("User not found in AI graph. Triggering AI model DB sync...");
+        await fetch(`http://localhost:8000/refresh`, { method: 'POST' });
+        // Retry after sync
+        aiResponse = await fetch(`http://localhost:8000/recommend/${userId}`);
+      }
+
       if (aiResponse.ok) {
         const liveData = await aiResponse.json() as any;
         

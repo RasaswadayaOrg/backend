@@ -84,6 +84,11 @@ export class FacebookService {
             continue;
           }
 
+          // ONLY sync posts that contain the '@rasaswadaya' tag in the message
+          if (!post.message || !post.message.toLowerCase().includes('@rasaswadaya')) {
+            continue;
+          }
+
           const existing = await (prisma as any).post.findFirst({
             where: { externalId: post.id },
             select: { id: true },
