@@ -168,7 +168,7 @@ export const getLiveFacebookFeed = async (req: AuthRequest, res: Response) => {
     const fbApiUrl = `${FB_GRAPH_API}/${artist.fbPageId}/posts?` +
       `fields=id,message,created_time,full_picture,permalink_url` +
       `&access_token=${artist.fbAccessToken}` +
-      `&limit=10`; // Fetch the latest 10 posts
+      `&limit=50`; // Fetch more items to account for filtered out posts
 
     const fbRes = await fetch(fbApiUrl);
     const fbData: any = await fbRes.json();
@@ -181,21 +181,23 @@ export const getLiveFacebookFeed = async (req: AuthRequest, res: Response) => {
       throw createError('Failed to fetch from Facebook API', 500);
     }
 
-    // 3. Format the data to match the Dashboard's expected Post structure without saving
-    const livePosts = (fbData.data || []).map((post: any) => ({
-      id: `live_fb_${post.id}`,
-      artistId: artist.id,
-      content: post.message || '',
-      imageUrl: post.full_picture || null,
-      videoUrl: null,
-      source: 'FACEBOOK', // Identifies that this is a Facebook post
-      externalId: post.id,
-      facebookUrl: post.permalink_url, // Direct link to FB
-      createdAt: post.created_time,
-      updatedAt: post.created_time,
-      likesCount: 0,
-      commentsCount: 0,
-      isLiveProxy: true // Custom flag to inform frontend this isn't from our DB
+    // 3. Filter posts by @rasaswadaya tag and format them without saving
+    const livePosts = (fbData.data || [])
+      .filter((post: any) => post.message && post.message.toLowerCase().includes('@rasaswadaya'))
+      .map((post: any) => ({
+        id: `live_fb_${post.id}`,
+        artistId: artist.id,
+        content: post.message || '',
+        imageUrl: post.full_picture || null,
+        videoUrl: null,
+        source: 'FACEBOOK', // Identifies that this is a Facebook post
+        externalId: post.id,
+        facebookUrl: post.permalink_url, // Direct link to FB
+        createdAt: post.created_time,
+        updatedAt: post.created_time,
+        likesCount: 0,
+        commentsCount: 0,
+        isLiveProxy: true // Custom flag to inform frontend this isn't from our DB
     }));
 
     // 4. Return directly to frontend
