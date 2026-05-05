@@ -1393,7 +1393,6 @@ export const deletePost = async (req: AuthRequest, res: Response) => {
 };
 
 
-
 // Store Owners
 
 export const createStoreOwner = async (req: AuthRequest, res: Response) => {
@@ -1474,5 +1473,182 @@ export const updateStoreOwner = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Update store owner error:', error);
     res.status(500).json({ success: false, message: 'Failed to update store owner' });
+  }
+};
+
+// ==========================================
+// Ad Controller Methods
+// ==========================================
+
+export const getAds = async (req: AuthRequest, res: Response) => {
+  try {
+    const { limit = '10', page = '1' } = req.query;
+    const limitNum = parseInt(limit as string, 10);
+    const pageNum = parseInt(page as string, 10);
+    
+    // Also include a parameter to fetch counts if requested
+    const { count } = req.query;
+
+    if (count === 'true') {
+      const totalCount = await prisma.sponsoredAd.count();
+      return res.status(200).json({ success: true, count: totalCount });
+    }
+
+    const offset = (pageNum - 1) * limitNum;
+
+    const ads = await prisma.sponsoredAd.findMany({
+      skip: offset,
+      take: limitNum,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return res.status(200).json({ success: true, data: ads });
+  } catch (error) {
+    console.error('Error fetching sponsored ads:', error);
+    return res.status(500).json({ success: false, message: 'Error fetching sponsored ads' });
+  }
+};
+
+export const getAdsForPlacement = async (req: AuthRequest, res: Response) => {
+  try {
+    const placement = req.params.placement as string;
+    const ads = await prisma.sponsoredAd.findMany({
+      where: { 
+        placement,
+        isActive: true
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    
+    // Log impression implicitly here, or usually done by separate event
+    return res.status(200).json({ success: true, data: ads });
+  } catch (error) {
+    console.error(`Error fetching ads for placement ${req.params.placement}:`, error);
+    return res.status(500).json({ success: false, message: 'Error fetching ads' });
+  }
+};
+
+export const getAd = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const ad = await prisma.sponsoredAd.findUnique({
+      where: { id }
+    });
+
+    if (!ad) {
+      return res.status(404).json({ success: false, message: 'Ad not found' });
+    }
+
+    return res.status(200).json({ success: true, data: ad });
+  } catch (error) {
+    console.error(`Error fetching ad ${req.params.id}:`, error);
+    return res.status(500).json({ success: false, message: 'Error fetching ad' });
+  }
+};
+
+export const trackAdClick = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    
+    const ad = await prisma.sponsoredAd.update({
+      where: { id },
+      data: {
+        clicks: {
+          increment: 1
+        }
+      }
+    });
+
+    return res.status(200).json({ success: true, data: ad });
+  } catch (error) {
+    console.error(`Error tracking click for ad ${req.params.id}:`, error);
+    return res.status(500).json({ success: false, message: 'Error tracking click' });
+  }
+};
+
+export const toggleAdStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    
+    const ad = await prisma.sponsoredAd.findUnique({
+      where: { id }
+    });
+
+    if (!ad) {
+      return res.status(404).json({ success: false, message: 'Ad not found' });
+    }
+
+    const updatedAd = await prisma.sponsoredAd.update({
+      where: { id },
+      data: {
+        isActive: !ad.isActive
+      }
+    });
+
+    return res.status(200).json({ success: true, message: 'Status updated successfully', data: updatedAd });
+  } catch (error) {
+    console.error(`Error toggling ad status for ${req.params.id}:`, error);
+    return res.status(500).json({ success: false, message: 'Error updating status' });
+  }
+};
+
+export const createAd = async (req: AuthRequest, res: Response) => {
+  try {
+    const { title, imageUrl, linkUrl, placement, size, isActive } = req.body;
+    
+    const newAd = await prisma.sponsoredAd.create({
+      data: {
+        title,
+        imageUrl,
+        linkUrl,
+        placement,
+        size,
+        isActive: isActive !== undefined ? isActive : true
+      }
+    });
+
+    return res.status(201).json({ success: true, message: 'Ad created successfully', data: newAd });
+  } catch (error) {
+    console.error('Error creating sponsored ad:', error);
+    return res.status(500).json({ success: false, message: 'Error creating ad' });
+  }
+};
+
+export const updateAd = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const { title, imageUrl, linkUrl, placement, size, isActive } = req.body;
+    
+    const updatedAd = await prisma.sponsoredAd.update({
+      where: { id },
+      data: {
+        title,
+        imageUrl,
+        linkUrl,
+        placement,
+        size,
+        isActive
+      }
+    });
+
+    return res.status(200).json({ success: true, message: 'Ad updated successfully', data: updatedAd });
+  } catch (error) {
+    console.error(`Error updating ad ${req.params.id}:`, error);
+    return res.status(500).json({ success: false, message: 'Error updating ad' });
+  }
+};
+
+export const deleteAd = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    
+    await prisma.sponsoredAd.delete({
+      where: { id }
+    });
+
+    return res.status(200).json({ success: true, message: 'Ad deleted successfully' });
+  } catch (error) {
+    console.error(`Error deleting ad ${req.params.id}:`, error);
+    return res.status(500).json({ success: false, message: 'Error deleting ad' });
   }
 };

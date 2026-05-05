@@ -237,4 +237,11 @@ router.post(
   postController.syncFacebook
 );
 
+// Get Live Facebook Feed (Without Syncing)
+router.get(
+  '/:artistId/facebook/live-feed',
+  authenticate,
+  fbOAuthController.getLiveFacebookFeed
+);
+
 export default router;
