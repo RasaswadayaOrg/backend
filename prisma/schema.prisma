@@ -14,6 +14,7 @@ model User {
   firstName       String?
   lastName        String?
   phone           String?
+  whatsappPhone   String?
   city            String?
   avatarUrl       String?
   role            UserRole         @default(USER)
@@ -60,7 +61,8 @@ model Event {
   location     String
   venue        String
   city         String
-  category     String
+  category     String  // canonical taxonomy: music | dance | film | drama (legacy free-text values still allowed for old rows)
+  subCategory  String? // sub-id matching CULTURAL_CATEGORIES.examples
   imageUrl     String?
   capacity     Int?
   ticketLink   String?
@@ -102,6 +104,8 @@ model Artist {
   name       String
   profession String
   genre      String
+  category    String  @default("music") // canonical taxonomy: music | dance | film | drama
+  subCategory String? // sub-id matching CULTURAL_CATEGORIES.examples (e.g. ves_dance, social_realism)
   bio        String?
   photoUrl   String?
   coverUrl   String?
@@ -231,6 +235,7 @@ model Store {
   imageUrl    String?
   coverUrl    String?
   location    String?
+  phone       String?
   rating      Float     @default(0)
   reviewCount Int       @default(0)
   createdAt   DateTime  @default(now())
@@ -248,6 +253,7 @@ model Product {
   imageUrl    String?
   images      String[]
   category    String?
+  listingType String      @default("sale") // "sale" | "rent"
   stock       Int         @default(0)
   price       Float       @default(0)
   isActive    Boolean     @default(true)
@@ -282,20 +288,44 @@ model Order {
   id              String      @id @default(cuid())
   status          OrderStatus @default(PENDING)
   shippingAddress String?
+  totalAmount     Float       @default(0)
+  currency        String      @default("LKR")
+  paidAt          DateTime?
+  paymentMethod   String?     // 'cod' | 'payhere'
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   userId          String
   user            User        @relation(fields: [userId], references: [id])
   items           OrderItem[]
+  payment         Payment?
 }
 
 model OrderItem {
   id        String  @id @default(cuid())
   quantity  Int
+  price     Float   @default(0)
   orderId   String
   productId String
   order     Order   @relation(fields: [orderId], references: [id])
   product   Product @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String        @unique
+  provider        String        @default("payhere")
+  payhereOrderId  String?       // mirror of order.id sent to PayHere
+  payherePaymentId String?      @unique
+  status          PaymentStatus @default(PENDING)
+  statusCode      String?       // PayHere status_code ("2", "0", "-1", ...)
+  statusMessage   String?
+  method          String?       // VISA, MASTER, EZCASH, etc.
+  amount          Float
+  currency        String        @default("LKR")
+  rawNotify       Json?         // full IPN payload for audit
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  order           Order         @relation(fields: [orderId], references: [id])
 }
 
 model Reminder {
@@ -313,7 +343,7 @@ model Recommendation {
   recommendedType String // "ARTIST" or "EVENT"
   recommendedId   String // The ID of the artist or event
   score           Float // AI confidence score (e.g. 0.85)
-  reason          String? // Short reason (e.g. "Because you like contemporary music")
+  reason          String   @default("") // Short reason (e.g. "Because you like contemporary music")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -365,6 +395,14 @@ enum OrderStatus {
   SHIPPED
   DELIVERED
   CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  CHARGEDBACK
 }
 
 enum EnquiryStatus {

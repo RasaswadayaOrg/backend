@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { prisma } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
@@ -14,6 +15,7 @@ const generateEventId = (): string => {
 export const getEvents = async (req: AuthRequest, res: Response) => {
   const {
     category,
+    subCategory,
     city,
     search,
     startDate,
@@ -31,7 +33,13 @@ export const getEvents = async (req: AuthRequest, res: Response) => {
 
   // Apply filters
   if (category) {
-    query = query.eq('category', category);
+    // Case-insensitive match so legacy free-text values ("Music") and
+    // new canonical IDs ("music") both resolve.
+    query = query.ilike('category', String(category));
+  }
+
+  if (subCategory) {
+    query = query.eq('subCategory', subCategory);
   }
 
   if (city) {
@@ -190,6 +198,7 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
     venue,
     city,
     category,
+    subCategory,
     imageUrl,
     capacity,
     ticketLink,
@@ -230,6 +239,7 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
       venue,
       city,
       category,
+      subCategory: subCategory || null,
       imageUrl: imageUrl || null,
       capacity: capacity ? Number(capacity) : null,
       ticketLink: ticketLink || null,
@@ -311,7 +321,7 @@ export const updateEvent = async (req: AuthRequest, res: Response) => {
 
   const allowedFields = [
     'title', 'description', 'eventDate', 'endDate', 'startTime', 'endTime',
-    'location', 'venue', 'city', 'category', 'imageUrl',
+    'location', 'venue', 'city', 'category', 'subCategory', 'imageUrl',
     'capacity', 'ticketLink', 'price', 'isFeatured'
   ];
 
@@ -405,61 +415,50 @@ export const deleteEvent = async (req: AuthRequest, res: Response) => {
 
 // Express interest in event
 export const expressInterest = async (req: AuthRequest, res: Response) => {
-  const { id: eventId } = req.params;
+  const eventId = String(req.params.id);
   const userId = req.user?.id;
 
-  // Check if event exists
-  const { data: event, error: eventError } = await supabase
-    .from('Event')
-    .select('id')
-    .eq('id', eventId)
-    .single();
+  if (!userId) {
+    throw createError('Authentication required', 401);
+  }
 
-  if (eventError || !event) {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { id: true },
+  });
+
+  if (!event) {
     throw createError('Event not found', 404);
   }
 
-  // Check if already interested
-  const { data: existingInterest } = await supabase
-    .from('Interest')
-    .select('id')
-    .eq('userId', userId)
-    .eq('eventId', eventId)
-    .single();
-
-  if (existingInterest) {
-    throw createError('Already interested in this event', 400);
-  }
-
-  const { error } = await supabase.from('Interest').insert({
-    userId,
-    eventId,
+  const interest = await prisma.interest.upsert({
+    where: {
+      userId_eventId: { userId, eventId },
+    },
+    update: {},
+    create: { userId, eventId },
+    select: { id: true, userId: true, eventId: true, createdAt: true },
   });
-
-  if (error) {
-    throw createError('Failed to express interest', 500);
-  }
 
   res.json({
     success: true,
     message: 'Interest expressed successfully',
+    data: interest,
   });
 };
 
 // Remove interest from event
 export const removeInterest = async (req: AuthRequest, res: Response) => {
-  const { id: eventId } = req.params;
+  const eventId = String(req.params.id);
   const userId = req.user?.id;
 
-  const { error } = await supabase
-    .from('Interest')
-    .delete()
-    .eq('userId', userId)
-    .eq('eventId', eventId);
-
-  if (error) {
-    throw createError('Failed to remove interest', 500);
+  if (!userId) {
+    throw createError('Authentication required', 401);
   }
+
+  await prisma.interest.deleteMany({
+    where: { userId, eventId },
+  });
 
   res.json({
     success: true,

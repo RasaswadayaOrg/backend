@@ -6,6 +6,8 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
 import { createClient } from '@supabase/supabase-js';
 import { prisma } from '../lib/db';
+import { refreshAiGraph } from '../lib/aiRefresh';
+import { buildPreferenceProfile, normaliseCity, preparePreferencesForStorage } from '../lib/culturalPreferences';
 
 // Supabase Auth client (with service role for admin operations)
 const supabaseAuth = createClient(
@@ -35,7 +37,8 @@ const generateToken = (user: { id: string; email: string; role: string; fullName
 
 // Register new user
 export const register = async (req: AuthRequest, res: Response) => {
-  const { email, password, fullName, firstName, lastName, phone, city } = req.body;
+  const { email, password, firstName, lastName, phone, city } = req.body;
+  const fullName = req.body.fullName || req.body.name;
 
   // Check if user already exists
   const existingUser = await prisma.user.findUnique({
@@ -60,7 +63,7 @@ export const register = async (req: AuthRequest, res: Response) => {
         firstName: firstName || null,
         lastName: lastName || null,
         phone: phone || null,
-        city: city || null,
+        city: city ? normaliseCity(city) : null,
         role: 'USER',
       },
       select: {
@@ -94,6 +97,7 @@ export const register = async (req: AuthRequest, res: Response) => {
         },
         token,
       },
+      token,
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -172,6 +176,7 @@ export const getCurrentUser = async (req: AuthRequest, res: Response) => {
       phone: true,
       city: true,
       role: true,
+      avatarUrl: true,
       createdAt: true,
       interests: true, // Fetch related interests
       preferences: true, // Fetch related user preferences
@@ -201,7 +206,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         firstName: firstName !== undefined ? firstName : undefined,
         lastName: lastName !== undefined ? lastName : undefined,
         phone: phone !== undefined ? phone : undefined,
-        city: city !== undefined ? city : undefined,
+        city: city !== undefined ? normaliseCity(city) : undefined,
         updatedAt: new Date().toISOString(),
       },
       select: {
@@ -218,14 +223,39 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
       },
     });
 
+    const aiRefresh = city !== undefined
+      ? await refreshAiGraph(`profile city update for user ${userId}`)
+      : undefined;
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
       data: user,
+      aiRefresh,
     });
   } catch (error) {
     console.error('Update profile error:', error);
     throw createError('Failed to update profile', 500);
+  }
+};
+
+// Update avatar
+export const updateAvatar = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded' });
+  }
+  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  try {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+      select: { id: true, email: true, fullName: true, avatarUrl: true, role: true, city: true },
+    });
+    res.json({ success: true, message: 'Avatar updated', data: { user, avatarUrl } });
+  } catch (error) {
+    console.error('Update avatar error:', error);
+    throw createError('Failed to update avatar', 500);
   }
 };
 
@@ -395,19 +425,28 @@ export const googleAuth = async (req: AuthRequest, res: Response) => {
 // Save user preferences (categories and interests)
 export const savePreferences = async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id;
-  const { city, categories, interests } = req.body;
+  const { city } = req.body;
+  const categories = req.body.categories || req.body.artInterests || [];
+  const interests = req.body.interests
+    || req.body.culturePreferences
+    || [
+      ...(req.body.moodPreferences || []),
+      ...(req.body.languagePreferences || []),
+    ];
 
   if (!userId) {
     throw createError('User not authenticated', 401);
   }
 
   try {
+    const preparedPreferences = preparePreferencesForStorage({ city, categories, interests });
+
     // Update user's city if provided
-    if (city) {
+    if (preparedPreferences.city) {
         await prisma.user.update({
             where: { id: userId },
             data: { 
-                city,
+          city: preparedPreferences.city,
                 updatedAt: new Date().toISOString() 
             },
         });
@@ -425,8 +464,8 @@ export const savePreferences = async (req: AuthRequest, res: Response) => {
       prefs = await prisma.userPreference.update({
         where: { userId },
         data: {
-          categories: categories || [],
-          interests: interests || [],
+          categories: preparedPreferences.categories,
+          interests: preparedPreferences.interests,
           updatedAt: new Date(),
         },
       });
@@ -435,16 +474,19 @@ export const savePreferences = async (req: AuthRequest, res: Response) => {
       prefs = await prisma.userPreference.create({
         data: {
           userId,
-          categories: categories || [],
-          interests: interests || [],
+          categories: preparedPreferences.categories,
+          interests: preparedPreferences.interests,
         },
       });
     }
+
+    const aiRefresh = await refreshAiGraph(`preference update for user ${userId}`);
 
     res.json({
       success: true,
       message: 'Preferences saved successfully',
       data: prefs,
+      aiRefresh,
     });
   } catch (error: any) {
     console.error('Save preferences error:', error);
@@ -464,13 +506,30 @@ export const getPreferences = async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const prefs = await prisma.userPreference.findUnique({
+    const [user, prefs] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, select: { city: true } }),
+      prisma.userPreference.findUnique({
       where: { userId },
+      }),
+    ]);
+
+    const summary = buildPreferenceProfile({
+      city: user?.city,
+      categories: prefs?.categories || [],
+      interests: prefs?.interests || [],
     });
 
     res.json({
       success: true,
-      data: prefs || { categories: [], interests: [] },
+      data: {
+        ...(prefs || { categories: [], interests: [] }),
+        summary: {
+          city: summary.city,
+          cityLabel: summary.cityLabel,
+          topCategoryLabel: summary.topCategoryLabel,
+          topInterestLabel: summary.topInterestLabel,
+        },
+      },
     });
   } catch (error: any) {
     console.error('Get preferences error:', error);

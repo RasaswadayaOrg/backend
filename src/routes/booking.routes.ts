@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.middleware';
+import { authenticate, authorize } from '../middleware/auth.middleware';
 import {
   createBooking,
   getArtistBookings,
@@ -9,12 +9,12 @@ import {
 const router = Router();
 
 // Create new booking request (Organizer)
-router.post('/', authenticate, createBooking);
+router.post('/', authenticate, authorize('ORGANIZER', 'ADMIN'), createBooking);
 
 // Get bookings for artist dashboard (Artist)
-router.get('/artist', authenticate, getArtistBookings);
+router.get('/artist', authenticate, authorize('ARTIST', 'ADMIN'), getArtistBookings);
 
 // Update status of booking (Approve/Reject by Artist)
-router.patch('/:id/status', authenticate, updateBookingStatus);
+router.patch('/:id/status', authenticate, authorize('ARTIST', 'ADMIN'), updateBookingStatus);
 
 export default router;

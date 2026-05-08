@@ -91,6 +91,8 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
       name,
       profession,
       genre,
+      category,
+      subCategory,
       bio,
       photoUrl,
       coverUrl,
@@ -110,6 +112,8 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
         name,
         profession,
         genre,
+        category: category || 'music',
+        subCategory: subCategory || null,
         bio,
         photoUrl,
         coverUrl,
@@ -143,6 +147,8 @@ export const updateArtist = async (req: AuthRequest, res: Response) => {
       name,
       profession,
       genre,
+      category,
+      subCategory,
       bio,
       photoUrl,
       coverUrl,
@@ -158,6 +164,8 @@ export const updateArtist = async (req: AuthRequest, res: Response) => {
         name,
         profession,
         genre,
+        ...(category !== undefined ? { category } : {}),
+        ...(subCategory !== undefined ? { subCategory } : {}),
         bio,
         photoUrl,
         coverUrl,
@@ -221,6 +229,7 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
       venue,
       city,
       category,
+      subCategory,
       imageUrl,
       capacity,
       ticketLink,
@@ -258,7 +267,8 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
         location: location || 'TBD',
         venue: venue || 'TBD',
         city: city || 'TBD',
-        category: category || 'General',
+        category: category || 'music',
+        subCategory: subCategory || null,
         imageUrl,
         capacity,
         ticketLink,
@@ -295,6 +305,7 @@ export const updateEvent = async (req: AuthRequest, res: Response) => {
       venue,
       city,
       category,
+      subCategory,
       imageUrl,
       capacity,
       ticketLink,
@@ -311,6 +322,7 @@ export const updateEvent = async (req: AuthRequest, res: Response) => {
         venue,
         city,
         category,
+        ...(subCategory !== undefined ? { subCategory } : {}),
         imageUrl,
         capacity,
         ticketLink,
@@ -708,7 +720,7 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
     
     let query = supabase
       .from('User')
-      .select('*', { count: 'exact' });
+      .select('id, email, fullName, firstName, lastName, phone, city, avatarUrl, role, createdAt, updatedAt', { count: 'exact' });
       
     if (search) {
       query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%`);
@@ -1070,10 +1082,20 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
       throw createError('Valid User ID is required', 400);
     }
 
-    // Fetch user with role requests
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        city: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
         RoleRequest: {
           orderBy: {
             createdAt: 'desc'
@@ -1144,7 +1166,8 @@ export const createOrganizer = async (req: AuthRequest, res: Response) => {
         city,
         avatarUrl,
         role: 'ORGANIZER'
-      }
+      },
+      select: { id: true, email: true, fullName: true, phone: true, city: true, avatarUrl: true, role: true, createdAt: true, updatedAt: true }
     });
 
     res.status(201).json({ success: true, data: user });
@@ -1172,7 +1195,8 @@ export const updateOrganizer = async (req: AuthRequest, res: Response) => {
         phone,
         city,
         avatarUrl
-      }
+      },
+      select: { id: true, email: true, fullName: true, phone: true, city: true, avatarUrl: true, role: true, createdAt: true, updatedAt: true }
     });
 
     res.json({ success: true, data: user });
@@ -1397,7 +1421,7 @@ export const deletePost = async (req: AuthRequest, res: Response) => {
 
 export const createStoreOwner = async (req: AuthRequest, res: Response) => {
   try {
-    const { email, password, fullName, phone, city, avatarUrl } = req.body;
+    const { email, password, fullName, phone, whatsappPhone, city, avatarUrl } = req.body;
     
     const existingUser = await prisma.user.findUnique({ where: { email } });
     
@@ -1412,6 +1436,7 @@ export const createStoreOwner = async (req: AuthRequest, res: Response) => {
           role: 'STORE_OWNER',
           fullName: fullName || existingUser.fullName,
           phone: phone || existingUser.phone,
+          whatsappPhone: whatsappPhone || (existingUser as any).whatsappPhone,
           city: city || existingUser.city,
           avatarUrl: avatarUrl || existingUser.avatarUrl
         },
@@ -1430,6 +1455,7 @@ export const createStoreOwner = async (req: AuthRequest, res: Response) => {
         password: hashedPassword,
         fullName,
         phone,
+        whatsappPhone,
         city,
         avatarUrl,
         role: 'STORE_OWNER'
@@ -1447,11 +1473,12 @@ export const createStoreOwner = async (req: AuthRequest, res: Response) => {
 export const updateStoreOwner = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string;
-    const { email, password, fullName, phone, city, avatarUrl } = req.body;
+    const { email, password, fullName, phone, whatsappPhone, city, avatarUrl } = req.body;
     
     const updateData: any = {
       fullName,
       phone,
+      whatsappPhone,
       city,
       avatarUrl
     };

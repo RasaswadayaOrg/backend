@@ -25,6 +25,7 @@ import songsRoutes from './routes/songs.routes';
 import recommendationRoutes from './routes/recommendation.routes';
 import bookingRoutes from './routes/booking.routes';
 import chatRoutes from './routes/chat.routes';
+import paymentRoutes from './routes/payment.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -56,10 +57,14 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/artists', artistRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/events', eventRoutes);
+app.use('/api/v1/artists', artistRoutes);
 app.use('/api/academies', academyRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/cart', cartRoutes);
+app.use('/api/orders', orderRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/admin', adminRoutes);
@@ -68,6 +73,8 @@ app.use('/api/v1/songs', songsRoutes);
 app.use('/api/v1/recommendations', recommendationRoutes);
 app.use('/api/v1/booking-requests', bookingRoutes);
 app.use('/api/v1/chat', chatRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 
 // 404 handler
 app.use((req, res) => {

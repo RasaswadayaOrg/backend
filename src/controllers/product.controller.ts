@@ -8,6 +8,7 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
   const {
     category,
     search,
+    listing,
     page = 1,
     limit = 12,
   } = req.query;
@@ -21,6 +22,10 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
 
   if (category) {
     query = query.eq('category', category);
+  }
+
+  if (listing) {
+    query = query.eq('listingType', listing);
   }
 
   if (search) {

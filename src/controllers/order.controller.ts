@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { createId } from '@paralleldrive/cuid2';
 import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
@@ -79,7 +80,8 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
 // Create order from cart
 export const createOrder = async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id;
-  const { shippingAddress } = req.body;
+  const { shippingAddress, paymentMethod } = req.body;
+  const method = paymentMethod === 'payhere' ? 'payhere' : 'cod';
 
   // Get cart items
   const { data: cartItems, error: cartError } = await supabase
@@ -126,23 +128,30 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
   }
 
   // Create order
+  const nowIso = new Date().toISOString();
   const { data: order, error: orderError } = await supabase
     .from('Order')
     .insert({
+      id: createId(),
       userId,
       shippingAddress,
       status: 'PENDING',
       totalAmount,
+      paymentMethod: method,
+      currency: 'LKR',
+      updatedAt: nowIso,
     })
     .select('*')
     .single();
 
   if (orderError) {
-    throw createError('Failed to create order', 500);
+    console.error('[createOrder] Order insert failed:', orderError);
+    throw createError(`Failed to create order: ${orderError.message}`, 500);
   }
 
   // Create order items
   const orderItemsData = orderItems.map((item) => ({
+    id: createId(),
     ...item,
     orderId: order.id,
   }));
@@ -152,9 +161,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     .insert(orderItemsData);
 
   if (itemsError) {
+    console.error('[createOrder] OrderItem insert failed:', itemsError);
     // Rollback order
     await supabase.from('Order').delete().eq('id', order.id);
-    throw createError('Failed to create order items', 500);
+    throw createError(`Failed to create order items: ${itemsError.message}`, 500);
   }
 
   // Update product stock
