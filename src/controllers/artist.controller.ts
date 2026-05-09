@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { createId } from '@paralleldrive/cuid2';
+import { prisma } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
@@ -110,6 +111,7 @@ export const getTalentHuntArtists = async (req: AuthRequest, res: Response) => {
   res.json({
     success: true,
     data: enrichedArtists,
+    artists: enrichedArtists,
     pagination: {
       page: Number(page),
       limit: Number(limit),
@@ -124,6 +126,8 @@ export const getArtists = async (req: AuthRequest, res: Response) => {
   const {
     genre,
     profession,
+    category,
+    subCategory,
     search,
     page = 1,
     limit = 10,
@@ -134,6 +138,14 @@ export const getArtists = async (req: AuthRequest, res: Response) => {
   let query = supabase
     .from('Artist')
     .select('*', { count: 'exact' });
+
+  if (category) {
+    query = query.eq('category', category);
+  }
+
+  if (subCategory) {
+    query = query.eq('subCategory', subCategory);
+  }
 
   if (genre) {
     query = query.eq('genre', genre);
@@ -243,6 +255,8 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
     name,
     profession,
     genre,
+    category,
+    subCategory,
     bio,
     photoUrl,
     coverUrl,
@@ -273,6 +287,8 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
       name,
       profession,
       genre,
+      category: category || 'music',
+      subCategory: subCategory || null,
       bio: bio || null,
       photoUrl: photoUrl || null,
       coverUrl: coverUrl || null,
@@ -331,7 +347,7 @@ export const updateArtist = async (req: AuthRequest, res: Response) => {
   };
 
   const allowedFields = [
-    'name', 'profession', 'genre', 'bio', 'photoUrl', 'coverUrl',
+    'name', 'profession', 'genre', 'category', 'subCategory', 'bio', 'photoUrl', 'coverUrl',
     'location', 'website', 'instagram', 'facebook'
   ];
 
@@ -381,63 +397,50 @@ export const deleteArtist = async (req: AuthRequest, res: Response) => {
 
 // Follow artist
 export const followArtist = async (req: AuthRequest, res: Response) => {
-  const { id: artistId } = req.params;
+  const artistId = String(req.params.id);
   const userId = req.user?.id;
 
-  // Check if artist exists
-  const { data: artist } = await supabase
-    .from('Artist')
-    .select('id')
-    .eq('id', artistId)
-    .single();
+  if (!userId) {
+    throw createError('Authentication required', 401);
+  }
+
+  const artist = await prisma.artist.findUnique({
+    where: { id: artistId },
+    select: { id: true },
+  });
 
   if (!artist) {
     throw createError('Artist not found', 404);
   }
 
-  // Check if already following
-  const { data: existingFollow } = await supabase
-    .from('Follower')
-    .select('id')
-    .eq('userId', userId)
-    .eq('artistId', artistId)
-    .single();
-
-  if (existingFollow) {
-    throw createError('Already following this artist', 400);
-  }
-
-  const { error } = await supabase.from('Follower').insert({
-    id: createId(),
-    userId,
-    artistId,
+  const follow = await prisma.follower.upsert({
+    where: {
+      userId_artistId: { userId, artistId },
+    },
+    update: {},
+    create: { userId, artistId },
+    select: { id: true, userId: true, artistId: true, createdAt: true },
   });
-
-  if (error) {
-    console.error('Supabase follow error:', error);
-    throw createError('Failed to follow artist', 500);
-  }
 
   res.json({
     success: true,
     message: 'Now following artist',
+    data: follow,
   });
 };
 
 // Unfollow artist
 export const unfollowArtist = async (req: AuthRequest, res: Response) => {
-  const { id: artistId } = req.params;
+  const artistId = String(req.params.id);
   const userId = req.user?.id;
 
-  const { error } = await supabase
-    .from('Follower')
-    .delete()
-    .eq('userId', userId)
-    .eq('artistId', artistId);
-
-  if (error) {
-    throw createError('Failed to unfollow artist', 500);
+  if (!userId) {
+    throw createError('Authentication required', 401);
   }
+
+  await prisma.follower.deleteMany({
+    where: { userId, artistId },
+  });
 
   res.json({
     success: true,

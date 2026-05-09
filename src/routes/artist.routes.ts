@@ -15,6 +15,8 @@ router.get(
   [
     query('genre').optional().isString(),
     query('profession').optional().isString(),
+    query('category').optional().isIn(['music', 'dance', 'film', 'drama']),
+    query('subCategory').optional().isString(),
     query('search').optional().isString(),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 50 }),
@@ -54,6 +56,8 @@ router.post(
     body('name').notEmpty().withMessage('Name is required'),
     body('profession').notEmpty().withMessage('Profession is required'),
     body('genre').notEmpty().withMessage('Genre is required'),
+    body('category').optional().isIn(['music', 'dance', 'film', 'drama']).withMessage('Invalid category'),
+    body('subCategory').optional({ nullable: true }).isString(),
     body('bio').optional().isString(),
   ],
   validateRequest,
@@ -68,6 +72,8 @@ router.put(
     body('name').optional().notEmpty(),
     body('profession').optional().notEmpty(),
     body('genre').optional().notEmpty(),
+    body('category').optional().isIn(['music', 'dance', 'film', 'drama']).withMessage('Invalid category'),
+    body('subCategory').optional({ nullable: true }).isString(),
   ],
   validateRequest,
   artistController.updateArtist

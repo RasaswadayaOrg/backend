@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:seed": "ts-node prisma/seed.ts",
+    "db:seed:marketplace": "ts-node prisma/seed-marketplace.ts",
     "db:studio": "prisma studio"
   },
   "repository": {
@@ -28,9 +29,8 @@
   "dependencies": {
     "@paralleldrive/cuid2": "^3.3.0",
     "@prisma/adapter-pg": "^7.3.0",
-    "@prisma/client": "^7.2.0",
+    "@prisma/client": "^7.8.0",
     "@supabase/supabase-js": "^2.90.1",
-
     "@types/pg": "^8.16.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
@@ -43,8 +43,7 @@
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
-    "pg": "^8.17.2",
-    "prisma": "^7.2.0"
+    "pg": "^8.17.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -55,7 +54,9 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^25.0.6",
     "@types/pg": "^8.16.0",
+    "concurrently": "^9.2.1",
     "nodemon": "^3.1.11",
+    "prisma": "^7.8.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/admin.controller';
+import { authenticate, authorize } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Public admin stats endpoint (for admin dashboard)
+router.use(authenticate, authorize('ADMIN'));
+
+// Admin stats endpoint
 router.get('/stats', adminController.getAdminStats);
 
 // Admin orders endpoint

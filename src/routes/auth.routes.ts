@@ -14,7 +14,12 @@ router.post(
     body('password')
       .isLength({ min: 6 })
       .withMessage('Password must be at least 6 characters'),
-    body('fullName').notEmpty().withMessage('Full name is required'),
+    body().custom((value) => {
+      if (!value.fullName && !value.name) {
+        throw new Error('Full name is required');
+      }
+      return true;
+    }),
   ],
   validateRequest,
   authController.register
@@ -47,6 +52,17 @@ router.get('/me', authenticate, authController.getCurrentUser);
 
 // Get my reminders
 router.get('/reminders', authenticate, authController.getReminders);
+
+// Update avatar
+router.put(
+  '/avatar',
+  authenticate,
+  (req, res, next) => {
+    const { uploadAvatar } = require('../middleware/upload.middleware');
+    uploadAvatar.single('avatar')(req, res, next);
+  },
+  authController.updateAvatar
+);
 
 // Update profile
 router.put(

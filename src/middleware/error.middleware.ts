@@ -15,12 +15,13 @@ export const errorHandler = (
 
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
-
-  res.status(statusCode).json({
+  const response: Record<string, unknown> = {
     success: false,
     error: message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-  });
+    status: statusCode,
+  };
+
+  res.status(statusCode).json(response);
 };
 
 export class ApiError extends Error {

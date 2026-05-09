@@ -243,58 +243,87 @@ export const getMyStore = async (req: AuthRequest, res: Response) => {
   });
 };
 
-// Get orders that contain products from the logged-in user's store
+// Get orders for the current seller's store (orders containing their products)
 export const getMyStoreOrders = async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id;
 
-  // Find the store for this user
-  const { data: store } = await supabase
+  // Find the seller's store
+  const { data: store, error: storeError } = await supabase
     .from('Store')
     .select('id')
     .eq('ownerId', userId)
     .single();
 
-  if (!store) {
+  if (storeError || !store) {
     return res.json({ success: true, data: [] });
   }
 
-  // Fetch recent orders with nested items + products and buyer info, then filter server-side
-  const { data: orders, error } = await supabase
-    .from('Order')
-    .select(`
-      *,
-      items:OrderItem(id, quantity, price, product:Product(id, name, imageUrl, storeId)),
-      buyer:User!Order_userId_fkey(id, fullName, email)
-    `)
-    .order('createdAt', { ascending: false });
+  // Get all product IDs for this store
+  const { data: storeProducts } = await supabase
+    .from('Product')
+    .select('id')
+    .eq('storeId', store.id);
 
-  if (error || !orders) {
-    throw createError('Failed to fetch orders', 500);
+  const productIds = (storeProducts || []).map((p) => p.id);
+
+  if (productIds.length === 0) {
+    return res.json({ success: true, data: [] });
   }
 
-  // Keep only orders that have at least one item from this store
-  const filtered = (orders as any[])
-    .map((o) => ({ ...o }))
-    .filter((o) => Array.isArray(o.items) && o.items.some((it: any) => it.product && it.product.storeId === store.id))
-    .map((o) => {
-      // compute total for this store only
-      const itemsForStore = o.items.filter((it: any) => it.product && it.product.storeId === store.id);
-      const totalForStore = itemsForStore.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 0)), 0);
-      return {
-        id: o.id,
-        status: o.status,
-        shippingAddress: o.shippingAddress,
-        createdAt: o.createdAt,
-        totalForStore,
-        buyer: o.buyer || null,
-        items: itemsForStore.map((it: any) => ({
-          id: it.id,
-          quantity: it.quantity,
-          price: it.price,
-          product: it.product,
-        })),
-      };
-    });
+  // Find OrderItems that reference these products and include order+buyer+product details
+  const { data: items, error: itemsError } = await supabase
+    .from('OrderItem')
+    .select(`
+      id,
+      quantity,
+      price,
+      orderId,
+      product:Product(id, name, imageUrl, storeId),
+      order:Order(id, status, shippingAddress, createdAt, totalAmount,
+        user:User!Order_userId_fkey(id, fullName, email))
+    `)
+    .in('productId', productIds);
 
-  res.json({ success: true, data: filtered });
+  if (itemsError) {
+    throw createError('Failed to fetch store orders', 500);
+  }
+
+  // Group items by order, filtering items to only this store's products
+  const orderMap = new Map<string, any>();
+  (items || []).forEach((it: any) => {
+    const order = it.order;
+    if (!order) return;
+    const key = order.id;
+    if (!orderMap.has(key)) {
+      orderMap.set(key, {
+        id: order.id,
+        status: order.status,
+        shippingAddress: order.shippingAddress,
+        createdAt: order.createdAt,
+        totalAmount: order.totalAmount,
+        buyer: order.user,
+        items: [],
+      });
+    }
+    orderMap.get(key).items.push({
+      id: it.id,
+      quantity: it.quantity,
+      price: it.price,
+      product: it.product,
+    });
+  });
+
+  const orders = Array.from(orderMap.values())
+    .map((o: any) => ({
+      ...o,
+      totalForStore: (o.items || []).reduce(
+        (sum: number, it: any) => sum + Number(it.price || 0) * Number(it.quantity || 0),
+        0
+      ),
+    }))
+    .sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+  res.json({ success: true, data: orders });
 };

@@ -1,8 +1,13 @@
 import { Router } from 'express';
 import * as userController from '../controllers/user.controller';
+import { savePreferences, getPreferences } from '../controllers/auth.controller';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 
 const router = Router();
+
+// Current user's cultural preferences
+router.post('/preferences', authenticate, savePreferences);
+router.get('/preferences', authenticate, getPreferences);
 
 // Get all users (admin only)
 router.get('/', authenticate, authorize('ADMIN'), userController.getUsers);
