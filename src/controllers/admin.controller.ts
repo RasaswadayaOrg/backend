@@ -5,6 +5,47 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { createError } from '../middleware/error.middleware';
 import bcrypt from 'bcryptjs';
 
+// Canonical taxonomy enforced at write time so the recommender's hard
+// art-form filter has clean data to match against.
+const CANONICAL_ART_FORMS = new Set(['music', 'dance', 'film', 'drama']);
+
+const CATEGORY_ALIASES: Record<string, string> = {
+  // music family
+  concert: 'music', 'live music': 'music', baila: 'music', classical: 'music',
+  carnatic: 'music', orchestra: 'music', choir: 'music', band: 'music', opera: 'music',
+  'folk music': 'music', singer: 'music', vocalist: 'music', instrumental: 'music',
+  hindustani: 'music', jazz: 'music', rock: 'music', pop: 'music',
+  // dance family
+  kandyan: 'dance', 'kandyan dance': 'dance', ballet: 'dance',
+  'contemporary dance': 'dance', 'folk dance': 'dance', bharatanatyam: 'dance',
+  // drama family
+  theatre: 'drama', theater: 'drama', play: 'drama', nadagam: 'drama', kolam: 'drama',
+  nurthi: 'drama', stage: 'drama', teledrama: 'drama', stageplay: 'drama',
+  'stage play': 'drama',
+  // film family
+  cinema: 'film', movie: 'film', screening: 'film', documentary: 'film',
+  'short film': 'film', 'film festival': 'film', filmmaking: 'film',
+};
+
+const normaliseCategory = (raw: unknown, fallback: string = 'music'): string => {
+  const value = String(raw ?? '').trim().toLowerCase();
+  if (!value) return fallback;
+  if (CANONICAL_ART_FORMS.has(value)) return value;
+  if (CATEGORY_ALIASES[value]) return CATEGORY_ALIASES[value];
+  for (const [token, canon] of Object.entries(CATEGORY_ALIASES)) {
+    if (value.includes(token)) return canon;
+  }
+  for (const canon of CANONICAL_ART_FORMS) {
+    if (value.includes(canon)) return canon;
+  }
+  // Reject ambiguous values rather than silently coercing — keeps the AI
+  // recommender filter clean. Admin UI should pick from a fixed dropdown.
+  throw createError(
+    `Invalid category '${raw}'. Must be one of: music, dance, film, drama.`,
+    400
+  );
+};
+
 // Get admin dashboard stats (public - for admin panel use)
 export const getAdminStats = async (req: AuthRequest, res: Response) => {
   try {
@@ -112,7 +153,7 @@ export const createArtist = async (req: AuthRequest, res: Response) => {
         name,
         profession,
         genre,
-        category: category || 'music',
+        category: normaliseCategory(category, 'music'),
         subCategory: subCategory || null,
         bio,
         photoUrl,
@@ -164,7 +205,7 @@ export const updateArtist = async (req: AuthRequest, res: Response) => {
         name,
         profession,
         genre,
-        ...(category !== undefined ? { category } : {}),
+        ...(category !== undefined ? { category: normaliseCategory(category, 'music') } : {}),
         ...(subCategory !== undefined ? { subCategory } : {}),
         bio,
         photoUrl,
@@ -267,7 +308,7 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
         location: location || 'TBD',
         venue: venue || 'TBD',
         city: city || 'TBD',
-        category: category || 'music',
+        category: normaliseCategory(category, 'music'),
         subCategory: subCategory || null,
         imageUrl,
         capacity,
@@ -321,7 +362,7 @@ export const updateEvent = async (req: AuthRequest, res: Response) => {
         location,
         venue,
         city,
-        category,
+        ...(category !== undefined ? { category: normaliseCategory(category, 'music') } : {}),
         ...(subCategory !== undefined ? { subCategory } : {}),
         imageUrl,
         capacity,

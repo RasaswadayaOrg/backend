@@ -22,18 +22,44 @@ const artistSelect = {
   genre: true,
   photoUrl: true,
   location: true,
+  category: true,
+  subCategory: true,
 };
 
 const eventSelect = {
   id: true,
   title: true,
   category: true,
+  subCategory: true,
   imageUrl: true,
   eventDate: true,
   description: true,
   city: true,
   location: true,
   venue: true,
+};
+
+// When a user has chosen explicit art-forms (music / dance / film / drama),
+// recommendations from a different art-form are excluded outright. Items
+// whose `category` is empty / null are kept (legacy / generic items) so
+// they can still appear when relevant on other signals.
+const ART_FORMS = new Set(['music', 'dance', 'film', 'drama']);
+
+const itemArtForm = (item: any): string | null => {
+  if (!item) return null;
+  const raw = String(item.category || '').trim().toLowerCase();
+  if (!raw) return null;
+  return ART_FORMS.has(raw) ? raw : null;
+};
+
+const passesArtFormFilter = (profile: PreferenceProfile, item: any): boolean => {
+  if (!profile.artForms || profile.artForms.length === 0) return true;
+  const form = itemArtForm(item);
+  // When the user has chosen explicit art-forms, REQUIRE a matching form on
+  // the item. Unclassified items are dropped — better to show fewer than to
+  // pollute a "drama" feed with uncategorised musicians.
+  if (!form) return false;
+  return profile.artForms.includes(form);
 };
 
 const normalise = normaliseToken;
@@ -163,22 +189,33 @@ const getUserPreferenceProfile = async (userId: string) => {
   });
 };
 
+// Token-aware term match. Splits each candidate value into normalised tokens
+// and only credits a hit when a preference term equals one of those tokens
+// (or when the term is a multi-word phrase that appears as a contiguous
+// substring of the value). Avoids the previous behaviour where 'art' would
+// match 'artist', 'artistic', etc.
 const scoreTermMatch = (profile: PreferenceProfile, values: Array<string | null | undefined>) => {
   let score = 0;
   const matchedTerms = new Set<string>();
 
   for (const value of values) {
     const normalised = normalise(value);
-    if (!normalised) {
-      continue;
-    }
-    const valueParts = new Set([normalised, ...normalised.split('_').filter((part) => part.length > 2)]);
+    if (!normalised) continue;
+    const tokens = new Set<string>(normalised.split('_').filter((part) => part.length > 1));
+    tokens.add(normalised);
+
     for (const term of profile.matchTerms) {
-      if (matchedTerms.has(term)) {
-        continue;
-      }
-      if (normalised === term || normalised.includes(term) || term.includes(normalised) || valueParts.has(term)) {
-        score += normalised === term || valueParts.has(term) ? 0.16 : 0.1;
+      if (matchedTerms.has(term) || term.length < 3) continue;
+      const isExactToken = tokens.has(term);
+      // Only allow phrase-level fuzzy match for multi-token terms (e.g.
+      // 'kandyan_dance' against 'kandyan_dance_troupe'). Single short words
+      // must match a token exactly.
+      const isPhraseMatch = term.includes('_') && normalised.includes(term);
+      if (isExactToken) {
+        score += 0.18;
+        matchedTerms.add(term);
+      } else if (isPhraseMatch) {
+        score += 0.12;
         matchedTerms.add(term);
       }
     }
@@ -202,22 +239,34 @@ const scoreHydratedRecommendation = (profile: PreferenceProfile, rec: any) => {
     return 0;
   }
 
+  // Boost for an exact art-form / sub-category match — the strongest signal
+  // we have. Without this the controller used to give equal weight to a
+  // genre fragment match and an exact category match.
+  let categoryBoost = 0;
+  const form = itemArtForm(rec.item);
+  if (form && profile.artForms.includes(form)) categoryBoost += 0.12;
+  const subCategory = normalise(rec.item.subCategory);
+  if (subCategory && profile.matchTerms.has(subCategory)) categoryBoost += 0.10;
+
   if (rec.recommendedType === 'ARTIST') {
     return Math.min(
-      0.42,
-      scoreTermMatch(profile, [rec.item.genre, rec.item.profession, rec.item.name, rec.item.location])
-      + scoreCityMatch(profile, [rec.item.location], 0.08)
+      0.5,
+      categoryBoost
+      + scoreTermMatch(profile, [rec.item.genre, rec.item.profession, rec.item.subCategory, rec.item.location])
+      + scoreCityMatch(profile, [rec.item.location], 0.06)
     );
   }
 
   return Math.min(
-    0.48,
-    scoreTermMatch(profile, [rec.item.category, rec.item.title, rec.item.city, rec.item.location, rec.item.venue, rec.item.description])
+    0.55,
+    categoryBoost
+    + scoreTermMatch(profile, [rec.item.category, rec.item.subCategory, rec.item.title, rec.item.city, rec.item.location, rec.item.venue, rec.item.description])
     + scoreCityMatch(profile, [rec.item.city, rec.item.location, rec.item.venue], 0.18)
   );
 };
 
 const personaliseHydratedRecommendations = (recommendations: any[], profile: PreferenceProfile) => recommendations
+  .filter((rec) => passesArtFormFilter(profile, rec?.item))
   .map((rec) => {
     const preferenceBoost = scoreHydratedRecommendation(profile, rec);
     return {
@@ -254,48 +303,61 @@ const getContentBasedFallback = async (profile: PreferenceProfile): Promise<Reco
     }),
   ]);
 
+  // Apply hard art-form filter when the user has explicit preferences.
+  const filteredArtists = artists.filter((a) => passesArtFormFilter(profile, a));
+  const filteredEvents = events.filter((e) => passesArtFormFilter(profile, e));
+
   const reasonTarget = profile.topInterestLabel !== 'Not selected'
     ? profile.topInterestLabel
     : profile.topCategoryLabel !== 'Not selected'
       ? profile.topCategoryLabel
       : profile.cityLabel || 'location';
 
-  const artistCandidates = artists.map((artist) => {
-    const score = Math.min(
-      0.99,
-      0.38
-      + scoreTermMatch(profile, [artist.genre, artist.profession, artist.name, artist.location])
-      + scoreCityMatch(profile, [artist.location], 0.06)
-    );
+  const artistCandidates = filteredArtists.map((artist) => {
+    const termScore = scoreTermMatch(profile, [artist.genre, artist.profession, artist.subCategory, artist.location]);
+    const cityScore = scoreCityMatch(profile, [artist.location], 0.06);
+    const formMatch = profile.artForms.includes(itemArtForm(artist) || '') ? 0.10 : 0;
+    const score = Math.min(0.99, 0.30 + termScore + cityScore + formMatch);
     return {
       recommendedId: artist.id,
       recommendedType: 'ARTIST' as RecommendationType,
       score,
+      relevance: termScore + cityScore + formMatch,
       reason: profile.hasSignals ? `Matched to your ${reasonTarget} preference` : 'Popular cultural artist',
     };
   });
 
-  const eventCandidates = events.map((event) => {
-    const score = Math.min(
-      0.99,
-      0.36
-      + scoreTermMatch(profile, [event.category, event.title, event.city, event.location, event.venue, event.description])
-      + scoreCityMatch(profile, [event.city, event.location, event.venue], 0.18)
-    );
+  const eventCandidates = filteredEvents.map((event) => {
+    const termScore = scoreTermMatch(profile, [event.category, event.subCategory, event.title, event.city, event.location, event.venue, event.description]);
+    const cityScore = scoreCityMatch(profile, [event.city, event.location, event.venue], 0.18);
+    const formMatch = profile.artForms.includes(itemArtForm(event) || '') ? 0.10 : 0;
+    const score = Math.min(0.99, 0.30 + termScore + cityScore + formMatch);
     return {
       recommendedId: event.id,
       recommendedType: 'EVENT' as RecommendationType,
       score,
-      reason: profile.hasSignals ? `Matched to your ${reasonTarget} preference and location` : 'Upcoming cultural event',
+      relevance: termScore + cityScore + formMatch,
+      reason: profile.hasSignals ? `Matched to your ${reasonTarget} preference` : 'Upcoming cultural event',
     };
   });
 
-  const rankedArtists = artistCandidates.sort((a, b) => b.score - a.score).slice(0, 6);
-  const rankedEvents = eventCandidates.sort((a, b) => b.score - a.score).slice(0, 6);
+  // When the user has signals, drop candidates with zero relevance — they
+  // would otherwise be ranked by the constant 0.30 base score and surface
+  // as if they were preference matches.
+  const minRelevance = profile.hasSignals ? 0.04 : 0;
+  const rankedArtists = artistCandidates
+    .filter((c) => c.relevance >= minRelevance)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
+  const rankedEvents = eventCandidates
+    .filter((c) => c.relevance >= minRelevance)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
 
   return [...rankedEvents, ...rankedArtists]
     .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
+    .slice(0, 12)
+    .map(({ relevance: _r, ...rest }) => rest);
 };
 
 const cacheRecommendations = async (userId: string, recommendations: RecommendationCandidate[]) => {

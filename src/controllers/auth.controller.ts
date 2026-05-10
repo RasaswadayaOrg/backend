@@ -227,6 +227,14 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
       ? await refreshAiGraph(`profile city update for user ${userId}`)
       : undefined;
 
+    if (city !== undefined) {
+      try {
+        await prisma.recommendation.deleteMany({ where: { userId } });
+      } catch (cacheError) {
+        console.warn('Failed to clear cached recommendations after city update:', cacheError);
+      }
+    }
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
@@ -481,6 +489,15 @@ export const savePreferences = async (req: AuthRequest, res: Response) => {
     }
 
     const aiRefresh = await refreshAiGraph(`preference update for user ${userId}`);
+
+    // Drop stale cached recommendations so the next /recommendations call
+    // is computed against the new preferences instead of returning rows that
+    // were scored under the old city / interests.
+    try {
+      await prisma.recommendation.deleteMany({ where: { userId } });
+    } catch (cacheError) {
+      console.warn('Failed to clear cached recommendations after preference update:', cacheError);
+    }
 
     res.json({
       success: true,
