@@ -8,6 +8,7 @@ import {
   formatAmount,
   getCheckoutUrl,
   getPayHereConfig,
+  retrievePaymentByOrder,
   statusCodeToPaymentStatus,
   verifyNotifySignature,
 } from '../services/payhere.service';
@@ -238,4 +239,117 @@ export const getPaymentByOrder = async (req: AuthRequest, res: Response) => {
     .maybeSingle();
 
   res.json({ success: true, data: { order, payment } });
+};
+
+/**
+ * POST /api/v1/payments/payhere/verify/:orderId
+ *
+ * Fallback when the PayHere IPN webhook hasn't reached us (e.g. backend on
+ * localhost in development, or transient network failures in production).
+ * Calls PayHere's Retrieval API directly to fetch authoritative payment
+ * status, then mirrors the same Payment/Order DB updates the IPN handler
+ * would have done.
+ */
+export const verifyPayHerePayment = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+  const orderId = String(req.params.orderId);
+  const cfg = getPayHereConfig();
+
+  const { data: order, error } = await supabase
+    .from('Order')
+    .select('id, userId, status, totalAmount, currency, paidAt')
+    .eq('id', orderId)
+    .single();
+
+  if (error || !order) throw createError('Order not found', 404);
+  if (order.userId !== userId && req.user?.role !== 'ADMIN') {
+    throw createError('Not authorized', 403);
+  }
+
+  // If the order is already PAID, just return current state — no need to hit
+  // PayHere again (saves API calls and is idempotent).
+  if (order.status === 'PAID') {
+    const { data: payment } = await supabase
+      .from('Payment')
+      .select('id, status, statusCode, statusMessage, method, amount, currency, payherePaymentId, updatedAt')
+      .eq('orderId', orderId)
+      .maybeSingle();
+    return res.json({ success: true, data: { order, payment, source: 'cache' } });
+  }
+
+  let retrieved;
+  try {
+    retrieved = await retrievePaymentByOrder(orderId, cfg);
+  } catch (e: any) {
+    throw createError(e?.message || 'PayHere retrieval failed', 502);
+  }
+
+  if (!retrieved) {
+    // PayHere has no record of this order yet — user may have abandoned the
+    // checkout, or hasn't completed it. Return current DB state unchanged.
+    const { data: payment } = await supabase
+      .from('Payment')
+      .select('id, status, statusCode, statusMessage, method, amount, currency, payherePaymentId, updatedAt')
+      .eq('orderId', orderId)
+      .maybeSingle();
+    return res.json({ success: true, data: { order, payment, source: 'payhere-empty' } });
+  }
+
+  // Mirror the IPN handler's upsert + Order update logic.
+  const now = new Date().toISOString();
+  const { data: existing } = await supabase
+    .from('Payment')
+    .select('id')
+    .eq('orderId', orderId)
+    .maybeSingle();
+
+  const paymentPayload: Record<string, unknown> = {
+    payherePaymentId: retrieved.paymentId,
+    status: retrieved.status,
+    statusCode: null,
+    statusMessage: retrieved.statusRaw,
+    method: retrieved.method,
+    amount: retrieved.amount,
+    currency: retrieved.currency,
+    rawNotify: { source: 'retrieval-api', raw: retrieved.raw },
+    updatedAt: now,
+  };
+
+  if (existing) {
+    await supabase.from('Payment').update(paymentPayload).eq('id', existing.id);
+  } else {
+    await supabase.from('Payment').insert({
+      id: createId(),
+      orderId: String(orderId),
+      provider: 'payhere',
+      payhereOrderId: String(orderId),
+      ...paymentPayload,
+      createdAt: now,
+    });
+  }
+
+  if (retrieved.status === 'SUCCESS' && order.status !== 'PAID') {
+    await supabase
+      .from('Order')
+      .update({ status: 'PAID', paidAt: now, updatedAt: now })
+      .eq('id', orderId);
+  }
+
+  // Return the freshly-updated rows.
+  const { data: updatedOrder } = await supabase
+    .from('Order')
+    .select('id, userId, status, totalAmount, currency, paidAt, paymentMethod')
+    .eq('id', orderId)
+    .single();
+
+  const { data: payment } = await supabase
+    .from('Payment')
+    .select('id, status, statusCode, statusMessage, method, amount, currency, payherePaymentId, updatedAt')
+    .eq('orderId', orderId)
+    .maybeSingle();
+
+  res.json({
+    success: true,
+    data: { order: updatedOrder, payment, source: 'payhere-retrieval' },
+  });
 };

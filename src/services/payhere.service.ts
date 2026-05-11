@@ -26,17 +26,25 @@ import crypto from 'crypto';
 const SANDBOX_CHECKOUT = 'https://sandbox.payhere.lk/pay/checkout';
 const LIVE_CHECKOUT    = 'https://www.payhere.lk/pay/checkout';
 
+// Merchant API base (OAuth + Retrieval API)
+const SANDBOX_API_BASE = 'https://sandbox.payhere.lk';
+const LIVE_API_BASE    = 'https://www.payhere.lk';
+
 export interface PayHereConfig {
   merchantId: string;
   merchantSecret: string;
+  appId: string;          // PayHere App ID — required for Retrieval API
+  appSecret: string;      // PayHere App Secret — required for Retrieval API
   sandbox: boolean;
-  publicUrl: string;   // public base URL of backend (for notify_url)
-  frontendUrl: string; // frontend base URL (for return_url, cancel_url)
+  publicUrl: string;      // public base URL of backend (for notify_url)
+  frontendUrl: string;    // frontend base URL (for return_url, cancel_url)
 }
 
 export function getPayHereConfig(): PayHereConfig {
   const merchantId     = process.env.PAYHERE_MERCHANT_ID || '';
   const merchantSecret = process.env.PAYHERE_MERCHANT_SECRET || '';
+  const appId          = process.env.PAYHERE_APP_ID || '';
+  const appSecret      = process.env.PAYHERE_APP_SECRET || '';
   const sandbox        = (process.env.PAYHERE_SANDBOX || 'true').toLowerCase() !== 'false';
   const publicUrl      = process.env.PUBLIC_BACKEND_URL || process.env.BACKEND_URL || 'http://localhost:3001';
   const frontendUrl    = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -44,7 +52,11 @@ export function getPayHereConfig(): PayHereConfig {
   if (!merchantId || !merchantSecret) {
     // Don't throw at import-time; let the controller throw a clean 500 when used.
   }
-  return { merchantId, merchantSecret, sandbox, publicUrl, frontendUrl };
+  return { merchantId, merchantSecret, appId, appSecret, sandbox, publicUrl, frontendUrl };
+}
+
+export function getApiBase(cfg: PayHereConfig = getPayHereConfig()) {
+  return cfg.sandbox ? SANDBOX_API_BASE : LIVE_API_BASE;
 }
 
 export function getCheckoutUrl(cfg: PayHereConfig = getPayHereConfig()) {
@@ -103,5 +115,139 @@ export function statusCodeToPaymentStatus(code: string):
     case '-2': return 'FAILED';
     case '-3': return 'CHARGEDBACK';
     default:   return 'PENDING';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Retrieval API — used as a fallback when the IPN webhook can't be delivered
+// (e.g. backend is on localhost during development, or PayHere's webhook is
+// temporarily failing). Docs:
+//   https://support.payhere.lk/api-&-mobile-sdk/retrieval-api
+// ─────────────────────────────────────────────────────────────────────────────
+
+type CachedToken = { token: string; expiresAt: number };
+let tokenCache: CachedToken | null = null;
+
+/** OAuth2 client_credentials flow. Caches the token until 60s before expiry. */
+export async function getMerchantAccessToken(
+  cfg: PayHereConfig = getPayHereConfig()
+): Promise<string> {
+  const now = Date.now();
+  if (tokenCache && tokenCache.expiresAt - 60_000 > now) {
+    return tokenCache.token;
+  }
+
+  if (!cfg.appId || !cfg.appSecret) {
+    throw new Error(
+      'PayHere App ID/Secret not configured. Set PAYHERE_APP_ID and ' +
+      'PAYHERE_APP_SECRET in the backend environment (create an App in the ' +
+      'PayHere Business dashboard → Settings → Integrations).'
+    );
+  }
+
+  const basic = Buffer.from(`${cfg.appId}:${cfg.appSecret}`).toString('base64');
+  const url = `${getApiBase(cfg)}/merchant/v1/oauth/token`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${basic}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'grant_type=client_credentials',
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`PayHere OAuth failed (${res.status}): ${txt}`);
+  }
+
+  const data = await res.json() as { access_token: string; expires_in?: number };
+  const expiresInMs = (data.expires_in ?? 600) * 1000;
+  tokenCache = { token: data.access_token, expiresAt: now + expiresInMs };
+  return data.access_token;
+}
+
+/**
+ * Looks up payment(s) for an order on PayHere's side. Returns the most recent
+ * payment row, or null when no payment has been attempted yet.
+ *
+ * `status` is a string like "RECEIVED" / "PENDING" / "CANCELLED" / "FAILED" /
+ * "CHARGEDBACK" / "REFUNDED". We map these into our internal enum.
+ */
+export interface RetrievedPayment {
+  paymentId: string | null;
+  orderId: string;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'CHARGEDBACK' | 'REFUNDED';
+  statusRaw: string;
+  amount: number;
+  currency: string;
+  method: string | null;
+  date: string | null;
+  raw: unknown;
+}
+
+export async function retrievePaymentByOrder(
+  orderId: string,
+  cfg: PayHereConfig = getPayHereConfig()
+): Promise<RetrievedPayment | null> {
+  const token = await getMerchantAccessToken(cfg);
+  const url = `${getApiBase(cfg)}/merchant/v1/payment/search?order_id=${encodeURIComponent(orderId)}`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`PayHere retrieval failed (${res.status}): ${txt}`);
+  }
+
+  const body = await res.json() as { status?: number; data?: any[] };
+
+  // status=1 means lookup OK. Empty data array means no payment record yet.
+  if (body.status !== 1 || !Array.isArray(body.data) || body.data.length === 0) {
+    return null;
+  }
+
+  // PayHere returns an array; the most recent record is typically last but we
+  // sort by date defensively so retries don't pick up a stale "CANCELLED" row.
+  const sorted = [...body.data].sort(
+    (a, b) => String(b.date ?? '').localeCompare(String(a.date ?? ''))
+  );
+  const row = sorted[0];
+
+  return {
+    paymentId: row.payment_id != null ? String(row.payment_id) : null,
+    orderId: String(row.order_id ?? orderId),
+    status: mapRetrievalStatus(String(row.status ?? '')),
+    statusRaw: String(row.status ?? ''),
+    amount: Number(row.amount ?? 0),
+    currency: String(row.currency ?? 'LKR'),
+    method: row.payment_method ? String(row.payment_method) : null,
+    date: row.date ? String(row.date) : null,
+    raw: row,
+  };
+}
+
+function mapRetrievalStatus(s: string): RetrievedPayment['status'] {
+  switch (s.toUpperCase()) {
+    case 'RECEIVED':
+    case 'SUCCESS':
+      return 'SUCCESS';
+    case 'PENDING':
+      return 'PENDING';
+    case 'CANCELLED':
+    case 'CANCELED':
+      return 'CANCELLED';
+    case 'FAILED':
+      return 'FAILED';
+    case 'CHARGEDBACK':
+    case 'CHARGED_BACK':
+      return 'CHARGEDBACK';
+    case 'REFUNDED':
+      return 'REFUNDED';
+    default:
+      return 'PENDING';
   }
 }

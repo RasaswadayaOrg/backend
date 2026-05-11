@@ -15,6 +15,10 @@ router.post(
 // Initiate PayHere checkout (returns signed form fields)
 router.post('/payhere/initiate/:orderId', authenticate, paymentController.initiatePayHere);
 
+// Fallback: ask PayHere directly for the current payment status. Used when the
+// IPN webhook hasn't reached the backend (e.g. localhost dev or webhook outage).
+router.post('/payhere/verify/:orderId', authenticate, paymentController.verifyPayHerePayment);
+
 // Poll payment status for an order
 router.get('/order/:orderId', authenticate, paymentController.getPaymentByOrder);
 
