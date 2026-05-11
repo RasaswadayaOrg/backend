@@ -50,6 +50,15 @@ router.post(
 // Get current user
 router.get('/me', authenticate, authController.getCurrentUser);
 
+// Switch active role (between roles the user has been approved for)
+router.post(
+  '/switch-role',
+  authenticate,
+  [body('role').isIn(['ARTIST', 'ORGANIZER', 'STORE_OWNER']).withMessage('Invalid role')],
+  validateRequest,
+  authController.switchRole
+);
+
 // Get my reminders
 router.get('/reminders', authenticate, authController.getReminders);
 

@@ -187,10 +187,72 @@ export const getCurrentUser = async (req: AuthRequest, res: Response) => {
     throw createError('User not found', 404);
   }
 
+  // All elevated roles the user has been approved for over time.
+  // Always includes the current role if it's elevated, plus every distinct
+  // role from APPROVED RoleRequest records. USER/ADMIN are excluded — the
+  // switcher only covers the three dashboard roles.
+  const approvedRequests = await prisma.roleRequest.findMany({
+    where: { userId, status: 'APPROVED' },
+    select: { requestedRole: true },
+    distinct: ['requestedRole'],
+  });
+
+  const ELEVATED = new Set(['ARTIST', 'ORGANIZER', 'STORE_OWNER']);
+  const approvedRoles = Array.from(
+    new Set(
+      [
+        user.role,
+        ...approvedRequests.map((r) => r.requestedRole),
+      ].filter((r) => ELEVATED.has(r as string))
+    )
+  );
+
   res.json({
     success: true,
-    data: user,
+    data: { ...user, approvedRoles },
   });
+};
+
+// Switch active role. The target role must be one the user has previously
+// been approved for (or currently holds). USER/ADMIN can't be selected here.
+export const switchRole = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+  const { role } = req.body as { role?: string };
+
+  const ELEVATED = new Set(['ARTIST', 'ORGANIZER', 'STORE_OWNER']);
+  if (!role || !ELEVATED.has(role)) {
+    return res.status(400).json({ success: false, error: 'Invalid role' });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true },
+  });
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+
+  if (user.role === role) {
+    return res.json({ success: true, data: { role } });
+  }
+
+  // Verify the user has an approved RoleRequest for this role.
+  const approved = await prisma.roleRequest.findFirst({
+    where: { userId, requestedRole: role as any, status: 'APPROVED' },
+    select: { id: true },
+  });
+  if (!approved) {
+    return res
+      .status(403)
+      .json({ success: false, error: 'You have not been approved for this role' });
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { role: role as any },
+  });
+
+  res.json({ success: true, data: { role } });
 };
 
 // Update profile
