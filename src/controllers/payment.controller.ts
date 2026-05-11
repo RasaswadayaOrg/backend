@@ -62,6 +62,14 @@ export const initiatePayHere = async (req: AuthRequest, res: Response) => {
   const [firstName, ...rest] = fullName.split(' ');
   const lastName = rest.join(' ') || firstName;
 
+  // shippingAddress is stored as "address parts... | +94 contact-phone".
+  // Split into clean address + phone so PayHere receives both correctly.
+  const rawShipping: string = order.shippingAddress || '';
+  const pipeIdx = rawShipping.lastIndexOf('|');
+  const addressLine = (pipeIdx >= 0 ? rawShipping.slice(0, pipeIdx) : rawShipping).trim().replace(/,$/, '');
+  const contactPhone = pipeIdx >= 0 ? rawShipping.slice(pipeIdx + 1).trim() : '';
+  const phone = contactPhone || buyer.phone || '';
+
   // Mark intended payment method on order so the seller can see how it was paid
   await supabase
     .from('Order')
@@ -99,8 +107,8 @@ export const initiatePayHere = async (req: AuthRequest, res: Response) => {
     first_name:  firstName,
     last_name:   lastName,
     email:       buyer.email || '',
-    phone:       buyer.phone || '',
-    address:     order.shippingAddress || '',
+    phone:       phone,
+    address:     addressLine,
     city:        buyer.city || 'Colombo',
     country:     'Sri Lanka',
     hash,
